@@ -1,26 +1,19 @@
 from fastapi import FastAPI, Request, HTTPException
 from utils import *
 from globals import model, df, distinct_ingredients, cuisines, courses, diets
-
-app = FastAPI(title="Recipe Recommendation API")
-
+from contextlib import asynccontextmanager
 
 
-# Initialize on startup
-@app.on_event("startup")
-async def startup_event():
-    global model, df, distinct_ingredients, cuisines, courses, diets
-    model = initialize_model()
-    df = pd.read_csv(DATA_PATH)
-    df["Cleaned_Ingredients"] = df["Cleaned_Ingredients"].apply(ast.literal_eval)
-    
-    # Initialize distinct values
-    distinct_ingredients = sorted(list(set(
-        ingredient for row in df["Cleaned_Ingredients"] for ingredient in row
-    )))
-    cuisines = [c for c in df["Cuisine"].dropna().unique() if c.lower() != "unknown"]
-    courses = [c for c in df["Course"].dropna().unique() if c.lower() != "unknown"]
-    diets = [d for d in df["Diet"].dropna().unique() if d.lower() != "unknown"]
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Lifespan context manager for FastAPI application"""
+    global df, distinct_ingredients, cuisines, courses, diets
+    df, distinct_ingredients, cuisines, courses, diets = initialize_globals()
+    yield
+
+
+app = FastAPI(title="Recipe Recommendation API", lifespan=lifespan)
+
 
 @app.get("/dropdown-data/")
 async def get_dropdown_data():
@@ -35,79 +28,38 @@ async def get_dropdown_data():
 @app.get("/")
 async def health_check():
     return {"Api is up"}
-import csv
-recipes_add_path = "./recipes_add.csv"
+
+
 @app.post("/add-recipe/")
-async def add_recipe(request: Request):
+async def add_recipe_endpoint(request: Request):
     try:
         data = await request.json()
-
-        # Access data directly from the request body (as a dictionary)
-        recipe_name = data.get("recipe_name")
-        prep_time = data.get("prep_time")
-        cook_time = data.get("cook_time")
-        selected_cuisines = data.get("selected_cuisines", [])
-        selected_courses = data.get("selected_courses", [])
-        selected_diets = data.get("selected_diets", [])
-        selected_ingredients = data.get("selected_ingredients", [])
-        image_input = data.get("image_input")  # Assuming base64 string
-
-        # Convert lists to strings
-        selected_cuisines = selected_cuisines
-        selected_courses = selected_courses
-        selected_diets =selected_diets
-        selected_ingredients = selected_ingredients
-
-        # Define the recipe as a dictionary
         recipe = {
-            "Title": recipe_name,
-            "Prep_Time": prep_time,
-            "Cook_Time": cook_time,
-            "Cuisine": selected_cuisines,
-            "Course": selected_courses,
-            "Diet": selected_diets,
-            "Cleaned_Ingredients": selected_ingredients,
-            "Image": image_input,  # Already in base64 format
+            "Title": data.get("recipe_name"),
+            "Prep_Time": data.get("prep_time"),
+            "Cook_Time": data.get("cook_time"),
+            "Cuisine": data.get("selected_cuisines", []),
+            "Course": data.get("selected_courses", []),
+            "Diet": data.get("selected_diets", []),
+            "Cleaned_Ingredients": data.get("selected_ingredients", []),
+            "Image": data.get("image_input"),
         }
-
-        # Open the CSV file and append the new recipe
-        with open(recipes_add_path, "a", newline="") as file:
-            writer = csv.DictWriter(file, fieldnames=recipe.keys())
-
-            # Check if the file is empty to write the header
-            if file.tell() == 0:
-                writer.writeheader()
-
-            writer.writerow(recipe)
-
+        add_recipe(recipe)
         return {"status": "Recipe added successfully"}
     except Exception as e:
-        raise HTTPException(status_code=500, detail="Feedback not added")
+        raise HTTPException(status_code=500, detail="Recipe not added")
 
 
 @app.post("/save-review/")
-async def save_review(request: Request):
+async def save_review_endpoint(request: Request):
     try:
         data = await request.json()
-
-        # Access data directly from the request body (as a dictionary)
-        review_text = data.get("review_text")
-
-        review_file = "./user_reviews.csv"  # Path to save reviews
-
-        # Prepare the review data
-        review_data = {"review_text": review_text}
-
-        # Append the review to the CSV file
-        with open(review_file, mode="a", newline="") as file:
-            writer = csv.DictWriter(file, fieldnames=review_data.keys())
-            if file.tell() == 0:  # Add header if the file is new
-                writer.writeheader()
-            writer.writerow(review_data)
-
+        save_review(data.get("review_text"))
         return {"status": "Review saved successfully"}
     except Exception as e:
-        raise HTTPException(status_code=500, detail="review not added")
+        raise HTTPException(status_code=500, detail="Review not saved")
+
+
 @app.post("/submit-feedback/")
 async def submit_feedback(request: Request):
     # try:
@@ -119,19 +71,20 @@ async def submit_feedback(request: Request):
     recipe_titles = data.get("recipe_titles", [])
     rating = data.get("rating")
     title_text = data.get("title_text")
-    
+
     image = data.get("image")
     try:
         image_data = base64.b64decode(image)
         image = Image.open(BytesIO(image_data))
     except:
-        image=None
+        image = None
     # Save feedback
     save_feedback(user_id, recipe_titles, rating, title_text, image)
     return {"message": "Feedback received"}
+
+
 # except Exception as e:
 #     raise HTTPException(status_code=500, detail="Feedback not received")
-
 
 
 # Endpoint to handle predictions
@@ -152,27 +105,27 @@ async def predict(request: Request):
     image = data.get("image", None)
     # Filter the DataFrame
     filtered_df = filter_df(
-            df,
-            Prep_Time=prep_time,
-            Cook_Time=cook_time,
-            Cuisine=selected_cuisines,
-            Course=selected_courses,
-            Diet=selected_diets,
-            Cleaned_Ingredients=selected_ingredients,
-        )
+        df,
+        Prep_Time=prep_time,
+        Cook_Time=cook_time,
+        Cuisine=selected_cuisines,
+        Course=selected_courses,
+        Diet=selected_diets,
+        Cleaned_Ingredients=selected_ingredients,
+    )
     if filtered_df.empty:
         return "No matching recipes found. Please adjust your inputs.", filtered_df[
-                [
-                    "Title",
-                    "Cuisine",
-                    "Course",
-                    "Diet",
-                    "Prep_Time",
-                    "Cook_Time",
-                    "Cleaned_Ingredients",
-                    "Instructions",
-                ]
-            ].to_markdown(index=False)
+            [
+                "Title",
+                "Cuisine",
+                "Course",
+                "Diet",
+                "Prep_Time",
+                "Cook_Time",
+                "Cleaned_Ingredients",
+                "Instructions",
+            ]
+        ].to_markdown(index=False)
     if image is not None:
         # read the image
         image_data = base64.b64decode(image)
@@ -199,26 +152,26 @@ async def predict(request: Request):
 
     recipe_titles = final_df["Title"].tolist()
     details = (
-            final_df[
-                [
-                    "Title",
-                    "Cuisine",
-                    "Course",
-                    "Diet",
-                    "Prep_Time",
-                    "Cook_Time",
-                    "Cleaned_Ingredients",
-                    "Instructions",
-                ]
-            ].to_markdown(index=False)
-            # .to_dict(orient="records")
-        )
+        final_df[
+            [
+                "Title",
+                "Cuisine",
+                "Course",
+                "Diet",
+                "Prep_Time",
+                "Cook_Time",
+                "Cleaned_Ingredients",
+                "Instructions",
+            ]
+        ].to_markdown(index=False)
+        # .to_dict(orient="records")
+    )
 
     return {"titles": recipe_titles, "details": details}
 
+
 # except Exception as e:
 #     raise HTTPException(status_code=500, detail=str(e))
-
 
 
 # Load the DataFrame

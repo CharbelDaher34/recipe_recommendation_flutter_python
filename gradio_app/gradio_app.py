@@ -7,11 +7,11 @@ from PIL import Image
 import numpy as np
 import time
 
-api_url = "http://api:8000/predict/"
-dropdown_data_url = "http://api:8000/dropdown-data/"
-feedback_url = "http://api:8000/submit-feedback/"
-add_recipe_url = "http://api:8000/add-recipe/"
-save_review_url = "http://api:8000/save-review/"
+api_url = "http://api:8001/predict/"
+dropdown_data_url = "http://api:8001/dropdown-data/"
+feedback_url = "http://api:8001/submit-feedback/"
+add_recipe_url = "http://api:8001/add-recipe/"
+save_review_url = "http://api:8001/save-review/"
 # Fetch dropdown data from the API
 while True:
     try:

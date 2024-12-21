@@ -7,4 +7,5 @@ gradio_app/frontend/*
 
 # Add these lines to handle large files
 api/embeddings.json
+data/embeddings.json
 *.json.gz

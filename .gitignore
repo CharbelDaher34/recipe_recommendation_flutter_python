@@ -1,0 +1,10 @@
+*.pt
+*.bin
+api/jina_clip_v1_model/*
+
+api/backend/*
+gradio_app/frontend/*
+
+# Add these lines to handle large files
+api/embeddings.json
+*.json.gz

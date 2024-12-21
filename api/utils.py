@@ -115,39 +115,37 @@ def compute_average_embedding(title_text=None, image=None):
         # Convert text to embedding using the API
         result = get_embeddings([title_text])[0]
         if result.get("type") != "error":
-            title_embedding = torch.tensor(result["embeddings"]).to(device)
+            # Ensure the tensor is 1D by squeezing any extra dimensions
+            title_embedding = torch.tensor(result["embeddings"]).squeeze().to(device)
             embeddings.append(title_embedding)
 
     if image:
         # Handle different image input types
         if isinstance(image, str):
-            # If image is a file path
             try:
                 image = Image.open(image)
                 img_str = image_to_base64(image)
             except Exception as e:
-                # If not a path, assume it's already a base64 string
                 img_str = image
         elif isinstance(image, Image.Image):
-            # If image is already a PIL Image
             img_str = image_to_base64(image)
         elif hasattr(image, "read"):
-            # If image is a file-like object
             image = Image.open(image)
             img_str = image_to_base64(image)
         else:
-            # Assume it's already a base64 string
             img_str = image
 
         # Get embedding from API
         result = get_embeddings([img_str])[0]
         if result.get("type") != "error":
-            image_embedding = torch.tensor(result["embeddings"]).to(device)
+            # Ensure the tensor is 1D by squeezing any extra dimensions
+            image_embedding = torch.tensor(result["embeddings"]).squeeze().to(device)
             embeddings.append(image_embedding)
 
     if len(embeddings) == 0:
         return list(torch.zeros(768).cpu().numpy())
 
+    # Stack the embeddings and compute mean
     avg_embedding = torch.mean(torch.stack(embeddings), dim=0)
     return list(avg_embedding.cpu().numpy())
 
@@ -158,14 +156,26 @@ def find_most_similar_recipe(avg_embedding, df, top_n=5):
     with open(RECIPE_EMBEDDINGS_PATH, "r") as f:
         recipe_embeddings = json.load(f)
 
-    # Rest of the function remains the same
     df_ids = set(df["ID"].astype(str))
     filtered_embeddings = {k: v for k, v in recipe_embeddings.items() if k in df_ids}
+
+    if not filtered_embeddings:
+        return df.head(top_n)["ID"].tolist()
+
     recipe_ids = list(filtered_embeddings.keys())
-    embeddings = [torch.tensor(embed) for embed in filtered_embeddings.values()]
-    similarities = cosine_similarity([avg_embedding], embeddings)[0]
+    # Convert embeddings to 2D numpy array and ensure correct shape
+    embeddings = np.array(
+        [np.array(embed).flatten() for embed in filtered_embeddings.values()]
+    )
+
+    # Ensure avg_embedding is 2D array with shape (1, n_features)
+    avg_embedding = np.array(avg_embedding).reshape(1, -1)
+
+    # Calculate similarities
+    similarities = cosine_similarity(avg_embedding, embeddings)[0]
     top_indices = similarities.argsort()[-top_n:][::-1]
     top_ids = [int(recipe_ids[i]) for i in top_indices]
+
     return top_ids
 
 
@@ -296,3 +306,78 @@ def add_recipe(recipe_data):
         if file.tell() == 0:
             writer.writeheader()
         writer.writerow(recipe_data)
+
+
+def predict_recipes(data, df):
+    """
+    Process prediction request and return recommended recipes.
+
+    Args:
+        data (dict): Request data containing user preferences and filters
+        df (pd.DataFrame): Recipe dataframe
+
+    Returns:
+        tuple: (recipe_titles, details) containing recommended recipes
+    """
+    # Extract data from request
+    user_id = data.get("user_id")
+    title_text = data.get("title_text")
+    prep_time = data.get("prep_time")
+    cook_time = data.get("cook_time")
+    selected_cuisines = data.get("selected_cuisines", [])
+    selected_courses = data.get("selected_courses", [])
+    selected_diets = data.get("selected_diets", [])
+    selected_ingredients = data.get("selected_ingredients", [])
+    image = data.get("image", None)
+
+    # Filter the DataFrame
+    filtered_df = filter_df(
+        df,
+        Prep_Time=prep_time,
+        Cook_Time=cook_time,
+        Cuisine=selected_cuisines,
+        Course=selected_courses,
+        Diet=selected_diets,
+        Cleaned_Ingredients=selected_ingredients,
+    )
+
+    if filtered_df.empty:
+        return [], "No matching recipes found. Please adjust your inputs."
+
+    # Process image if provided
+    if image is not None:
+        image_data = base64.b64decode(image)
+        image = Image.open(BytesIO(image_data))
+
+    # Compute embeddings and get recommendations
+    avg_embedding = compute_average_embedding(title_text, image)
+    user_embeddings = load_user_embeddings()
+    user_embedding = get_user_embeddings(user_id, user_embeddings)
+
+    avg_embedding = np.array(avg_embedding)
+    if user_embedding is not None:
+        user_embedding = np.array(user_embedding)
+        avg_embedding = 0.8 * avg_embedding + 0.2 * user_embedding
+
+    # Get final recommendations
+    if avg_embedding is None:
+        final_df = filtered_df.head(5)
+    else:
+        top_ids = find_most_similar_recipe(avg_embedding, filtered_df, top_n=5)
+        final_df = filtered_df[filtered_df["ID"].apply(lambda x: x in top_ids)]
+
+    recipe_titles = final_df["Title"].tolist()
+    details = final_df[
+        [
+            "Title",
+            "Cuisine",
+            "Course",
+            "Diet",
+            "Prep_Time",
+            "Cook_Time",
+            "Cleaned_Ingredients",
+            "Instructions",
+        ]
+    ].to_markdown(index=False)
+
+    return recipe_titles, details

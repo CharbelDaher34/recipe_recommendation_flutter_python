@@ -6,8 +6,95 @@ from PIL import Image
 import base64
 import io
 import re
+import itertools
+from typing import Dict
+
+
+class InputString(BaseModel):
+    content: str
+
+
+class ModelInstance:
+    def __init__(self, model_path: str):
+        self.model = AutoModel.from_pretrained(model_path, trust_remote_code=True)
+        self.model = torch.load(
+            f"{model_path}/jina.pt", map_location=torch.device("cpu")
+        )
+        self.request_count = 0
+
+    def encode_input(self, input_string):
+        """
+        Encode either text or base64 image string using the CLIP model
+        """
+        self.request_count += 1
+        try:
+            if is_base64_image(input_string):
+                # Process as image
+                image = base64_to_image(input_string)
+                embeddings = self.model.encode_image(image)
+                return {
+                    "status": "success",
+                    "type": "image",
+                    "shape": embeddings.shape,
+                    "embeddings": embeddings.tolist(),
+                }
+            else:
+                # Process as text
+                embeddings = self.model.encode_text([input_string])
+                return {
+                    "status": "success",
+                    "type": "text",
+                    "shape": embeddings.shape,
+                    "embeddings": embeddings.tolist(),
+                }
+        except Exception as e:
+            return {"status": "error", "message": str(e)}
+
+
+class LoadBalancer:
+    def __init__(self):
+        self.instances: Dict[str, ModelInstance] = {}
+        self.instance_cycle = None
+
+    def add_instance(self, instance_id: str, model_path: str):
+        self.instances[instance_id] = ModelInstance(model_path)
+        self.instance_cycle = itertools.cycle(self.instances.keys())
+
+    def get_next_instance(self) -> ModelInstance:
+        if not self.instances:
+            raise RuntimeError("No model instances available")
+        next_id = next(self.instance_cycle)
+        return self.instances[next_id]
+
+    def get_stats(self):
+        return {
+            instance_id: {"requests_processed": instance.request_count}
+            for instance_id, instance in self.instances.items()
+        }
+
 
 app = FastAPI()
+load_balancer = LoadBalancer()
+
+# Initialize model instances
+load_balancer.add_instance("model1", "./jina_clip_v1_model")
+load_balancer.add_instance("model2", "./jina_clip_v1_model")
+load_balancer.add_instance("model3", "./jina_clip_v1_model")
+# Add more instances as needed
+
+
+@app.post("/encode")
+async def encode_string(input_data: InputString):
+    instance = load_balancer.get_next_instance()
+    result = instance.encode_input(input_data.content)
+    if result["status"] == "error":
+        raise HTTPException(status_code=400, detail=result["message"])
+    return result
+
+
+@app.get("/stats")
+async def get_stats():
+    return load_balancer.get_stats()
 
 
 # Helper functions
@@ -32,70 +119,38 @@ def is_base64_image(string):
         return False
 
 
-# Load model (do this once at startup)
-model = AutoModel.from_pretrained("./jina_clip_v1_model", trust_remote_code=True)
-model = torch.load("./jina_clip_v1_model/jina.pt", map_location=torch.device("cpu"))
+# # Load model (do this once at startup)
+# model = AutoModel.from_pretrained("./jina_clip_v1_model", trust_remote_code=True)
+# model = torch.load("./jina_clip_v1_model/jina.pt", map_location=torch.device("cpu"))
 
 
-class InputString(BaseModel):
-    content: str
+# @app.post("/encode")
+# async def encode_string(input_data: InputString):
+#     result = encode_input(input_data.content)
+#     if result["status"] == "error":
+#         raise HTTPException(status_code=400, detail=result["message"])
+#     return result
 
 
-def encode_input(input_string):
-    """
-    Encode either text or base64 image string using the CLIP model
-    """
-    try:
-        if is_base64_image(input_string):
-            # Process as image
-            image = base64_to_image(input_string)
-            embeddings = model.encode_image(image)
-            return {
-                "status": "success",
-                "type": "image",
-                "shape": embeddings.shape,
-                "embeddings": embeddings.tolist(),
-            }
-        else:
-            # Process as text
-            embeddings = model.encode_text([input_string])
-            return {
-                "status": "success",
-                "type": "text",
-                "shape": embeddings.shape,
-                "embeddings": embeddings.tolist(),
-            }
-    except Exception as e:
-        return {"status": "error", "message": str(e)}
-
-
-@app.post("/encode")
-async def encode_string(input_data: InputString):
-    result = encode_input(input_data.content)
-    if result["status"] == "error":
-        raise HTTPException(status_code=400, detail=result["message"])
-    return result
-
-
-# Test endpoint
-@app.get("/")
-async def root():
-    return {"message": "CLIP Encoding API is running"}
+# # Test endpoint
+# @app.get("/")
+# async def root():
+#     return {"message": "CLIP Encoding API is running"}
 
 
 if __name__ == "__main__":
     import uvicorn
 
-    # Test the API with some examples
-    print("Testing text encoding...")
-    test_text = encode_input("hello world")
-    print(f"Text result: {test_text['type']}, Shape: {test_text['shape']}")
+    # # Test the API with some examples
+    # print("Testing text encoding...")
+    # test_text = encode_input("hello world")
+    # print(f"Text result: {test_text['type']}, Shape: {test_text['shape']}")
 
-    print("\nTesting image encoding...")
-    test_image = Image.open("../../compression_comparison.png")
-    base64_string = image_to_base64(test_image)
-    image_result = encode_input(base64_string)
-    print(f"Image result: {image_result['type']}, Shape: {image_result['shape']}")
+    # print("\nTesting image encoding...")
+    # test_image = Image.open("../../compression_comparison.png")
+    # base64_string = image_to_base64(test_image)
+    # image_result = encode_input(base64_string)
+    # print(f"Image result: {image_result['type']}, Shape: {image_result['shape']}")
 
     # Run the API server
     uvicorn.run(app, host="0.0.0.0", port=8000)

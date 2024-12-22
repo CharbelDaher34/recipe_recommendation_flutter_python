@@ -1,7 +1,7 @@
 *.pt
 *.bin
 api/jina_clip_v1_model/*
-
+*.csv
 api/backend/*
 gradio_app/frontend/*
 
@@ -9,3 +9,5 @@ gradio_app/frontend/*
 api/embeddings.json
 data/embeddings.json
 *.json.gz
+
+docker/elasticsearch_data/*

@@ -35,7 +35,7 @@ class Feedback(BaseModel):
 
 class UserReview(BaseModel):
     email: EmailStr
-    reviews: List[Feedback]
+    reviews: List[str]
 
 
 class RecipeAdd(Recipe):

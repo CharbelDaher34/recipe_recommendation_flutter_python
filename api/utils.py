@@ -63,8 +63,13 @@ def load_user_embeddings():
 
 
 def save_user_embeddings(user_embeddings):
-    with open(USER_EMBEDDINGS_PATH, "w") as f:
-        json.dump(user_embeddings, f)
+    try:
+        with open(USER_EMBEDDINGS_PATH, "w") as f:
+            json.dump(user_embeddings, f)
+    except IOError as e:
+        raise HTTPException(
+            status_code=500, detail=f"Failed to save user embeddings: {str(e)}"
+        )
 
 
 def get_user_embeddings(user_id, user_embeddings):
@@ -112,69 +117,48 @@ def filter_df(df, **kwargs):
 def compute_average_embedding(title_text=None, image=None):
     embeddings = []
     if title_text:
-        # Convert text to embedding using the API
         result = get_embeddings([title_text])[0]
         if result.get("type") != "error":
-            # Ensure the tensor is 1D by squeezing any extra dimensions
             title_embedding = torch.tensor(result["embeddings"]).squeeze().to(device)
             embeddings.append(title_embedding)
 
     if image:
-        # Handle different image input types
-        if isinstance(image, str):
-            try:
-                image = Image.open(image)
-                img_str = image_to_base64(image)
-            except Exception as e:
-                img_str = image
-        elif isinstance(image, Image.Image):
-            img_str = image_to_base64(image)
-        elif hasattr(image, "read"):
-            image = Image.open(image)
-            img_str = image_to_base64(image)
-        else:
-            img_str = image
-
-        # Get embedding from API
+        # Handle image processing...
         result = get_embeddings([img_str])[0]
         if result.get("type") != "error":
-            # Ensure the tensor is 1D by squeezing any extra dimensions
             image_embedding = torch.tensor(result["embeddings"]).squeeze().to(device)
             embeddings.append(image_embedding)
 
     if len(embeddings) == 0:
-        return list(torch.zeros(768).cpu().numpy())
+        raise ValueError("No valid embeddings could be generated from the input")
 
-    # Stack the embeddings and compute mean
     avg_embedding = torch.mean(torch.stack(embeddings), dim=0)
     return list(avg_embedding.cpu().numpy())
 
 
 # Function to find the most similar recipes
 def find_most_similar_recipe(avg_embedding, df, top_n=5):
-    # Use RECIPE_EMBEDDINGS_PATH instead of embeddings_json_path parameter
     with open(RECIPE_EMBEDDINGS_PATH, "r") as f:
         recipe_embeddings = json.load(f)
 
-    df_ids = set(df["ID"].astype(str))
-    filtered_embeddings = {k: v for k, v in recipe_embeddings.items() if k in df_ids}
+    # Convert all IDs to integers for consistency
+    df_ids = set(df["ID"].astype(int))
+    filtered_embeddings = {
+        int(k): v for k, v in recipe_embeddings.items() if int(k) in df_ids
+    }
 
     if not filtered_embeddings:
-        return df.head(top_n)["ID"].tolist()
+        return df.head(top_n)["ID"].astype(int).tolist()
 
     recipe_ids = list(filtered_embeddings.keys())
-    # Convert embeddings to 2D numpy array and ensure correct shape
     embeddings = np.array(
         [np.array(embed).flatten() for embed in filtered_embeddings.values()]
     )
-
-    # Ensure avg_embedding is 2D array with shape (1, n_features)
     avg_embedding = np.array(avg_embedding).reshape(1, -1)
 
-    # Calculate similarities
     similarities = cosine_similarity(avg_embedding, embeddings)[0]
     top_indices = similarities.argsort()[-top_n:][::-1]
-    top_ids = [int(recipe_ids[i]) for i in top_indices]
+    top_ids = [recipe_ids[i] for i in top_indices]  # No need to convert to int again
 
     return top_ids
 
@@ -195,41 +179,47 @@ from langdetect import detect
 
 
 def update_embedding_from_feedback(user_id, title_text, image, rating):
+    if not isinstance(rating, (int, float)) or rating < 0 or rating > 5:
+        raise ValueError("Rating must be a number between 0 and 5")
+
+    normalized_rating = rating / 5  # Normalize rating once
     user_embeddings = load_user_embeddings()
+
     if image is not None:
-        # read the image
         try:
             image_data = base64.b64decode(image)
             image = Image.open(BytesIO(image_data))
         except Exception as e:
-            try:
-                image = Image.fromarray(np.array(image))
-            except Exception as e:
-                pass
-    # Compute average embedding from title and/or image
-    # input_is_hindi = is_hindi(title_text) if title_text else False
-    # if input_is_hindi:
-    #     title_text = translate_text(title_text, "en", "hi")
+            print(f"Warning: Failed to process image: {str(e)}")
+            image = None
+
     avg_embedding = compute_average_embedding(title_text, image)
     update_user_embeddings(
-        user_id, user_embeddings, new_embedding=list(avg_embedding), alpha=rating / 5
+        user_id,
+        user_embeddings,
+        new_embedding=list(avg_embedding),
+        alpha=normalized_rating,
     )
 
 
 def save_feedback(user_id, recipe_titles, rating, title_text, image):
-    # Use FEEDBACK_PATH instead of hardcoded path
-    feedback_data = {
-        "user_id": user_id,
-        "recipe_titles": recipe_titles,
-        "rating": rating,
-    }
+    try:
+        feedback_data = {
+            "user_id": user_id,
+            "recipe_titles": recipe_titles,
+            "rating": rating,
+        }
 
-    with open(FEEDBACK_PATH, mode="a", newline="") as file:
-        writer = csv.DictWriter(file, fieldnames=feedback_data.keys())
-        if file.tell() == 0:
-            writer.writeheader()
-        writer.writerow(feedback_data)
-    update_embedding_from_feedback(user_id, title_text, image, rating / 5)
+        with open(FEEDBACK_PATH, mode="a", newline="") as file:
+            writer = csv.DictWriter(file, fieldnames=feedback_data.keys())
+            if file.tell() == 0:
+                writer.writeheader()
+            writer.writerow(feedback_data)
+        update_embedding_from_feedback(user_id, title_text, image, rating)
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"Failed to save feedback: {str(e)}"
+        )
 
 
 # Define FastAPI endpoint
@@ -342,7 +332,7 @@ def predict_recipes(data, df):
     )
 
     if filtered_df.empty:
-        return [], "No matching recipes found. Please adjust your inputs."
+        return [], "No similar recipes found"
 
     # Process image if provided
     if image is not None:

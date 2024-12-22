@@ -98,27 +98,6 @@ async def predict(request: Request):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-# Load the DataFrame
-# df = pd.read_csv("./data.csv")
-# df["Cleaned_Ingredients"] = df["Cleaned_Ingredients"].apply(ast.literal_eval)
-
-
-# # Compute distinct ingredients, cuisines, courses, and diets
-# distinct_ingredients = set()
-# for row in df["Cleaned_Ingredients"]:
-#     for ingredient in row:
-#         distinct_ingredients.add(ingredient)
-# distinct_ingredients = sorted(list(distinct_ingredients))
-
-# cuisines = df["Cuisine"].dropna().unique().tolist()
-# cuisines = [cuisine for cuisine in cuisines if cuisine.lower() != "unknown"]
-
-# courses = df["Course"].dropna().unique().tolist()
-# courses = [course for course in courses if course.lower() != "unknown"]
-
-# diets = df["Diet"].dropna().unique().tolist()
-# diets = [diet for diet in diets if diet.lower() != "unknown"]
-
 if __name__ == "__main__":
     import uvicorn
 

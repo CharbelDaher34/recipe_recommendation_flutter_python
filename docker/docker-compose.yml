@@ -1,0 +1,17 @@
+services:
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.17.0
+    container_name: elasticsearch
+    ports:
+      - "9200:9200" # Host port 9200 maps to container port 9200
+      - "9300:9300" # Host port 9300 maps to container port 9300
+    volumes:
+      - ./elasticsearch_data:/usr/share/elasticsearch/data # Store data in local project directory
+    environment:
+      - discovery.type=single-node # Run in single-node mode (suitable for development/testing)
+      - xpack.security.enabled=true # Enable security
+      - ELASTIC_PASSWORD=pass # Set password for the default "elastic" user
+
+volumes:
+  es_data:
+    driver: local # Local volume for persistent storage

@@ -1,5 +1,6 @@
 from fastapi import FastAPI, Request, HTTPException
 from utils import *
+from models import User  # Add this import
 
 # from globals import df, distinct_ingredients, cuisines, courses, diets
 from contextlib import asynccontextmanager
@@ -146,6 +147,26 @@ async def predict(request: Request):
         data = await request.json()
         recipe_titles, details = predict_recipes(data, df)
         return {"titles": recipe_titles, "details": details}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/signup/")
+@log_error
+async def signup(user_input: User):
+    try:
+        # Note: In production, you should hash the password before storing
+        # Try to create the user directly with user_input
+        success = create_user(user_input)
+
+        if success:
+            return {"message": "User created successfully"}
+        else:
+            raise HTTPException(status_code=400, detail="User already exists")
+
+    except ValueError as e:
+        # This will catch Pydantic validation errors
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

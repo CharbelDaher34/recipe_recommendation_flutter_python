@@ -16,6 +16,10 @@ from io import BytesIO
 import requests
 import io
 from elasticsearch import Elasticsearch
+import sys
+
+sys.path.append("../data")
+from models import *
 
 # Configuration constants
 
@@ -454,3 +458,75 @@ def predict_recipes(data, df):
     ].to_markdown(index=False)
 
     return recipe_titles, details
+
+
+## user login and signup
+def create_user(
+    user: User, es_client: Elasticsearch = es, index_name: str = "users"
+) -> bool:
+    """
+    Index a User model instance into Elasticsearch if it doesn't already exist
+
+    Args:
+        user: User model instance
+        es_client: Elasticsearch client instance
+        index_name: Name of the Elasticsearch index for users (default: "users")
+
+    Returns:
+        bool: True if user was indexed successfully, False if user already exists or error occurs
+    """
+    try:
+        # Check if user already exists
+        if es_client.exists(index=index_name, id=user.email):
+            print(f"User {user.email} already exists in {index_name}")
+            return False
+
+        # Convert User model to dictionary
+        doc = user.model_dump()
+
+        # Use email as document ID since it's unique
+        es_client.index(index=index_name, id=user.email, document=doc)
+        print(f"Successfully indexed user {user.email} to {index_name}")
+        return True
+
+    except Exception as e:
+        print(f"Error indexing user: {e}")
+        return False
+
+
+def login_user(
+    email: str, password: str, es_client: Elasticsearch, index_name: str = "users"
+) -> bool:
+    """
+    Verify user credentials against Elasticsearch
+
+    Args:
+        email: User's email
+        password: User's password (should be hashed in production)
+        es_client: Elasticsearch client instance
+        index_name: Name of the Elasticsearch index for users (default: "users")
+
+    Returns:
+        bool: True if credentials are valid, False otherwise
+    """
+    try:
+        # Check if user exists and get their data
+        if not es_client.exists(index=index_name, id=email):
+            print("User not found")
+            return False
+
+        # Get user data
+        user_data = es_client.get(index=index_name, id=email)["_source"]
+
+        # Check if password matches
+        # NOTE: In production, you should use proper password hashing and verification
+        if user_data["password"] == password:
+            print("Login successful")
+            return True
+        else:
+            print("Invalid password")
+            return False
+
+    except Exception as e:
+        print(f"Error during login: {e}")
+        return False

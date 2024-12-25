@@ -1,6 +1,5 @@
 from fastapi import HTTPException
 from PIL import Image
-from transformers import AutoModel
 from deep_translator import GoogleTranslator
 from langdetect import detect
 from sklearn.metrics.pairwise import cosine_similarity
@@ -495,14 +494,13 @@ def create_user(
 
 
 def login_user(
-    email: str, password: str, es_client: Elasticsearch, index_name: str = "users"
+    user: User, es_client: Elasticsearch = es, index_name: str = "users"
 ) -> bool:
     """
     Verify user credentials against Elasticsearch
 
     Args:
-        email: User's email
-        password: User's password (should be hashed in production)
+        user: User model instance containing email and password
         es_client: Elasticsearch client instance
         index_name: Name of the Elasticsearch index for users (default: "users")
 
@@ -511,16 +509,16 @@ def login_user(
     """
     try:
         # Check if user exists and get their data
-        if not es_client.exists(index=index_name, id=email):
+        if not es_client.exists(index=index_name, id=user.email):
             print("User not found")
             return False
 
         # Get user data
-        user_data = es_client.get(index=index_name, id=email)["_source"]
+        user_data = es_client.get(index=index_name, id=user.email)["_source"]
 
         # Check if password matches
         # NOTE: In production, you should use proper password hashing and verification
-        if user_data["password"] == password:
+        if user_data["password"] == user.password:
             print("Login successful")
             return True
         else:
@@ -530,3 +528,31 @@ def login_user(
     except Exception as e:
         print(f"Error during login: {e}")
         return False
+
+
+def add_recipe(
+    recipe: Recipe, es_client: Elasticsearch, index_name: str = "recipe_additions"
+) -> None:
+    """
+    Convert Recipe to RecipeAdd and index it to Elasticsearch with accepted=False
+
+    Args:
+        recipe: Recipe model instance
+        es_client: Elasticsearch client instance
+        index_name: Name of the Elasticsearch index for pending recipes
+    """
+    # Convert to pending RecipeAdd
+    recipe_dict = recipe.model_dump()
+    recipe_dict["accepted"] = False
+
+    # Create new RecipeAdd instance
+    pending_recipe = RecipeAdd(**recipe_dict)
+    # Prepare document
+    doc = pending_recipe.model_dump()
+
+    try:
+        # Index the document
+        es_client.index(index=index_name, id=str(recipe.id), document=doc)
+        print(f"Successfully indexed pending recipe {recipe.id} to {index_name}")
+    except Exception as e:
+        print(f"Error indexing pending recipe: {e}")

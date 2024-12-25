@@ -31,14 +31,17 @@ class Feedback(BaseModel):
     recipe_ids: List[int]
     rating: int
     comment: str
+    created_at: str
 
 
-user_id, recipe_titles, rating, title_text, image
+class Review(BaseModel):
+    content: str
+    created_at: str
 
 
 class UserReview(BaseModel):
     email: EmailStr
-    reviews: List[str]
+    reviews: List[Review]
 
 
 class RecipeAdd(Recipe):

@@ -1,6 +1,7 @@
 from fastapi import FastAPI, Request, HTTPException
 from utils import *
-from models import User  # Add this import
+from models import User, Recipe  # Add this import
+from datetime import timedelta
 
 # from globals import df, distinct_ingredients, cuisines, courses, diets
 from contextlib import asynccontextmanager
@@ -8,6 +9,7 @@ from fastapi import FastAPI, Request, HTTPException
 import logging
 from functools import wraps
 import traceback
+from auth_utils import require_auth, create_access_token, ACCESS_TOKEN_EXPIRE_MINUTES
 
 # Add these near the top of your file, after imports
 logging.basicConfig(
@@ -81,23 +83,20 @@ async def health_check():
 
 @app.post("/add-recipe/")
 @log_error
-async def add_recipe_endpoint(request: Request):
+@require_auth
+async def add_recipe_endpoint(recipe: Recipe, request: Request = None):
+    """
+    Add a new recipe to the pending recipes index
+
+    Args:
+        request: FastAPI Request object containing user authentication info
+        recipe: Recipe model instance containing all recipe details
+    """
     try:
-        data = await request.json()
-        recipe = {
-            "Title": data.get("recipe_name"),
-            "Prep_Time": data.get("prep_time"),
-            "Cook_Time": data.get("cook_time"),
-            "Cuisine": data.get("selected_cuisines", []),
-            "Course": data.get("selected_courses", []),
-            "Diet": data.get("selected_diets", []),
-            "Cleaned_Ingredients": data.get("selected_ingredients", []),
-            "Image": data.get("image_input"),
-        }
-        add_recipe(recipe)
-        return {"status": "Recipe added successfully"}
+        add_recipe(recipe, es)
+        return {"status": "Recipe submitted for review successfully"}
     except Exception as e:
-        raise HTTPException(status_code=500, detail="Recipe not added")
+        raise HTTPException(status_code=500, detail=f"Failed to add recipe: {str(e)}")
 
 
 @app.post("/save-review/")
@@ -163,6 +162,44 @@ async def signup(user_input: User):
             return {"message": "User created successfully"}
         else:
             raise HTTPException(status_code=400, detail="User already exists")
+
+    except ValueError as e:
+        # This will catch Pydantic validation errors
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/login/")
+@log_error
+async def login(user: User):
+    """
+    Login endpoint that verifies user credentials and returns an access token
+
+    Args:
+        user: User model instance containing email and password
+
+    Returns:
+        dict: Contains access token and token type on success
+    """
+    try:
+        success = login_user(user)
+
+        if success:
+            # Create access token
+            access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+            access_token = create_access_token(
+                data={"sub": user.email},  # "sub" is standard JWT claim for subject
+                expires_delta=access_token_expires,
+            )
+
+            return {
+                "access_token": access_token,
+                "token_type": "bearer",
+                "expires_in": ACCESS_TOKEN_EXPIRE_MINUTES * 60,  # seconds
+            }
+        else:
+            raise HTTPException(status_code=401, detail="Invalid credentials")
 
     except ValueError as e:
         # This will catch Pydantic validation errors

@@ -1,6 +1,6 @@
 from fastapi import FastAPI, Request, HTTPException
 from utils import *
-from models import User, Recipe  # Add this import
+from models import User, Recipe, Feedback  # Add this import
 from datetime import timedelta
 
 # from globals import df, distinct_ingredients, cuisines, courses, diets
@@ -112,30 +112,28 @@ async def save_review_endpoint(request: Request):
 
 @app.post("/submit-feedback/")
 @log_error
-async def submit_feedback(request: Request):
-    # try:
-    # Read the JSON data from the request body
-    data = await request.json()
+@require_auth
+async def submit_feedback(feedback: Feedback, request: Request):
+    """
+    Submit feedback endpoint that indexes feedback into Elasticsearch
 
-    # Extract the relevant fields from the JSON data
-    user_id = data.get("user_id")
-    recipe_titles = data.get("recipe_titles", [])
-    rating = data.get("rating")
-    title_text = data.get("title_text")
+    Args:
+        feedback: Feedback model instance containing feedback details
+        request: FastAPI Request object containing user authentication info
 
-    image = data.get("image")
+    Returns:
+        dict: Contains success/failure message
+    """
     try:
-        image_data = base64.b64decode(image)
-        image = Image.open(BytesIO(image_data))
-    except:
-        image = None
-    # Save feedback
-    save_feedback(user_id, recipe_titles, rating, title_text, image)
-    return {"message": "Feedback received"}
-
-
-# except Exception as e:
-#     raise HTTPException(status_code=500, detail="Feedback not received")
+        success = index_feedback(feedback, es)
+        if success:
+            return {"message": "Feedback received successfully"}
+        else:
+            raise HTTPException(status_code=500, detail="Failed to index feedback")
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"Error submitting feedback: {str(e)}"
+        )
 
 
 # Endpoint to handle predictions

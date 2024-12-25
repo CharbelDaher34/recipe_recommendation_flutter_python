@@ -288,24 +288,57 @@ def update_embedding_from_feedback(user_id, title_text, image, rating):
     )
 
 
-def save_feedback(user_id, recipe_titles, rating, title_text, image):
-    try:
-        feedback_data = {
-            "user_id": user_id,
-            "recipe_titles": recipe_titles,
-            "rating": rating,
-        }
+# def save_feedback(user_id, recipe_titles, rating, title_text, image):
+#     try:
+#         feedback_data = {
+#             "user_id": user_id,
+#             "recipe_titles": recipe_titles,
+#             "rating": rating,
+#         }
 
-        with open(FEEDBACK_PATH, mode="a", newline="") as file:
-            writer = csv.DictWriter(file, fieldnames=feedback_data.keys())
-            if file.tell() == 0:
-                writer.writeheader()
-            writer.writerow(feedback_data)
-        update_embedding_from_feedback(user_id, title_text, image, rating)
-    except Exception as e:
-        raise HTTPException(
-            status_code=500, detail=f"Failed to save feedback: {str(e)}"
+#         with open(FEEDBACK_PATH, mode="a", newline="") as file:
+#             writer = csv.DictWriter(file, fieldnames=feedback_data.keys())
+#             if file.tell() == 0:
+#                 writer.writeheader()
+#             writer.writerow(feedback_data)
+#         update_embedding_from_feedback(user_id, title_text, image, rating)
+#     except Exception as e:
+#         raise HTTPException(
+#             status_code=500, detail=f"Failed to save feedback: {str(e)}"
+#         )
+
+
+def index_feedback(
+    feedback: Feedback, es_client: Elasticsearch, index_name: str = "feedback"
+) -> bool:
+    """
+    Index a Feedback model instance into Elasticsearch
+
+    Args:
+        feedback: Feedback model instance
+        es_client: Elasticsearch client instance
+        index_name: Name of the Elasticsearch index (default: "feedback")
+
+    Returns:
+        bool: True if feedback was indexed successfully, False if error occurs
+    """
+    try:
+        # Convert Feedback model to dictionary
+        doc = feedback.model_dump()
+
+        # Generate a unique ID (you might want to use a different strategy)
+        doc_id = f"{feedback.email}_{feedback.created_at}"
+
+        # Index the document
+        es_client.index(index=index_name, id=doc_id, document=doc)
+        print(
+            f"Successfully indexed feedback from {feedback.email} at {feedback.created_at}"
         )
+        return True
+
+    except Exception as e:
+        print(f"Error indexing feedback: {e}")
+        return False
 
 
 # Define FastAPI endpoint
@@ -375,13 +408,13 @@ def save_review(review_text):
         writer.writerow(review_data)
 
 
-def add_recipe(recipe_data):
-    """Add a new recipe to the recipes CSV file"""
-    with open(RECIPES_ADD_PATH, "a", newline="") as file:
-        writer = csv.DictWriter(file, fieldnames=recipe_data.keys())
-        if file.tell() == 0:
-            writer.writeheader()
-        writer.writerow(recipe_data)
+# def add_recipe(recipe_data):
+#     """Add a new recipe to the recipes CSV file"""
+#     with open(RECIPES_ADD_PATH, "a", newline="") as file:
+#         writer = csv.DictWriter(file, fieldnames=recipe_data.keys())
+#         if file.tell() == 0:
+#             writer.writeheader()
+#         writer.writerow(recipe_data)
 
 
 def predict_recipes(data, df):

@@ -26,11 +26,14 @@ class Recipe(BaseModel):
 
 class Feedback(BaseModel):
     email: EmailStr
-    input_description: str = None
-    input_image: str = None
-    recipe_id: int
+    input_description: Optional[str] = None
+    input_image: Optional[str] = None
+    recipe_ids: List[int]
     rating: int
     comment: str
+
+
+user_id, recipe_titles, rating, title_text, image
 
 
 class UserReview(BaseModel):

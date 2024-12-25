@@ -1,14 +1,60 @@
 from fastapi import FastAPI, Request, HTTPException
 from utils import *
-from globals import model, df, distinct_ingredients, cuisines, courses, diets
+
+# from globals import df, distinct_ingredients, cuisines, courses, diets
 from contextlib import asynccontextmanager
+from fastapi import FastAPI, Request, HTTPException
+import logging
+from functools import wraps
+import traceback
+
+# Add these near the top of your file, after imports
+logging.basicConfig(
+    filename="api_errors.log",
+    level=logging.ERROR,
+    format="%(asctime)s - %(levelname)s - %(message)s",
+)
+
+
+def log_error(func):
+    @wraps(func)
+    async def wrapper(*args, **kwargs):
+        try:
+            return await func(*args, **kwargs)
+        except Exception as e:
+            # Get the request object from args
+            request = next((arg for arg in args if isinstance(arg, Request)), None)
+
+            # Get the endpoint name
+            endpoint = func.__name__
+
+            try:
+                # Try to get the request data
+                data = await request.json() if request else "No request data"
+            except:
+                data = "Could not parse request data"
+
+            # Log the error with detailed information
+            logging.error(
+                f"\nEndpoint: {endpoint}"
+                f"\nURL: {request.url if request else 'No URL'}"
+                f"\nMethod: {request.method if request else 'No method'}"
+                f"\nData: {data}"
+                f"\nError: {str(e)}"
+                f"\nTraceback: {traceback.format_exc()}"
+            )
+
+            # Re-raise the exception
+            raise HTTPException(status_code=500, detail=str(e))
+
+    return wrapper
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Lifespan context manager for FastAPI application"""
     global df, distinct_ingredients, cuisines, courses, diets
-    df, distinct_ingredients, cuisines, courses, diets = initialize_globals()
+    distinct_ingredients, cuisines, courses, diets = initialize_globals()
     yield
 
 
@@ -16,6 +62,7 @@ app = FastAPI(title="Recipe Recommendation API", lifespan=lifespan)
 
 
 @app.get("/dropdown-data/")
+@log_error
 async def get_dropdown_data():
     return {
         "cuisines": cuisines,
@@ -26,11 +73,13 @@ async def get_dropdown_data():
 
 
 @app.get("/")
+@log_error
 async def health_check():
     return {"Api is up"}
 
 
 @app.post("/add-recipe/")
+@log_error
 async def add_recipe_endpoint(request: Request):
     try:
         data = await request.json()
@@ -51,6 +100,7 @@ async def add_recipe_endpoint(request: Request):
 
 
 @app.post("/save-review/")
+@log_error
 async def save_review_endpoint(request: Request):
     try:
         data = await request.json()
@@ -61,6 +111,7 @@ async def save_review_endpoint(request: Request):
 
 
 @app.post("/submit-feedback/")
+@log_error
 async def submit_feedback(request: Request):
     # try:
     # Read the JSON data from the request body
@@ -89,6 +140,7 @@ async def submit_feedback(request: Request):
 
 # Endpoint to handle predictions
 @app.post("/predict/")
+@log_error
 async def predict(request: Request):
     try:
         data = await request.json()

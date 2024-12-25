@@ -15,6 +15,7 @@ import base64
 from io import BytesIO
 import requests
 import io
+from elasticsearch import Elasticsearch
 
 # Configuration constants
 
@@ -26,22 +27,104 @@ RECIPES_ADD_PATH = "./recipes_add.csv"
 REVIEWS_PATH = "./user_reviews.csv"
 device = "cpu"
 
+# Create Elasticsearch client
+es = Elasticsearch(
+    "http://localhost:9200",  # Changed from https to http
+    basic_auth=("elastic", "pass"),  # Use your actual password
+)
+# Update disk watermark thresholds
+es.cluster.put_settings(
+    body={
+        "persistent": {
+            "cluster.routing.allocation.disk.watermark.low": "99%",
+            "cluster.routing.allocation.disk.watermark.high": "99%",
+            "cluster.routing.allocation.disk.watermark.flood_stage": "99%",
+        }
+    }
+)
+# Test connection
+try:
+    if es.ping():
+        print("Successfully connected to Elasticsearch")
+        print(es.info())
+    else:
+        print("Could not connect to Elasticsearch")
+except Exception as e:
+    print(f"Connection failed: {e}")
+
+
+# def initialize_globals():
+#     """Initialize global variables used across the application"""
+#     global df, distinct_ingredients, cuisines, courses, diets
+#     df = pd.read_csv(DATA_PATH)
+#     print(df.head())
+#     df["Cleaned_Ingredients"] = df["Cleaned_Ingredients"].apply(ast.literal_eval)
+
+#     # Initialize distinct values
+#     distinct_ingredients = sorted(
+#         list(set(ingredient for row in df["Cleaned_Ingredients"] for ingredient in row))
+#     )
+#     cuisines = [c for c in df["Cuisine"].dropna().unique() if c.lower() != "unknown"]
+#     courses = [c for c in df["Course"].dropna().unique() if c.lower() != "unknown"]
+#     diets = [d for d in df["Diet"].dropna().unique() if d.lower() != "unknown"]
+#     return df, distinct_ingredients, cuisines, courses, diets
+
 
 def initialize_globals():
     """Initialize global variables used across the application"""
-    global df, distinct_ingredients, cuisines, courses, diets
-    df = pd.read_csv(DATA_PATH)
-    print(df.head())
-    df["Cleaned_Ingredients"] = df["Cleaned_Ingredients"].apply(ast.literal_eval)
+    try:
+        # Simple aggregation query for all fields
+        query = {
+            "size": 0,
+            "aggs": {
+                "unique_cuisines": {"terms": {"field": "cuisine", "size": 10000}},
+                "unique_courses": {"terms": {"field": "course", "size": 10000}},
+                "unique_diets": {"terms": {"field": "diet", "size": 10000}},
+                "unique_ingredients": {
+                    "terms": {"field": "ingredients.keyword", "size": 1000}
+                },
+            },
+        }
 
-    # Initialize distinct values
-    distinct_ingredients = sorted(
-        list(set(ingredient for row in df["Cleaned_Ingredients"] for ingredient in row))
-    )
-    cuisines = [c for c in df["Cuisine"].dropna().unique() if c.lower() != "unknown"]
-    courses = [c for c in df["Course"].dropna().unique() if c.lower() != "unknown"]
-    diets = [d for d in df["Diet"].dropna().unique() if d.lower() != "unknown"]
-    return df, distinct_ingredients, cuisines, courses, diets
+        # Execute the search
+        response = es.search(index="recipes", body=query)
+
+        # Extract values from buckets
+        cuisines = sorted(
+            [
+                bucket["key"]
+                for bucket in response["aggregations"]["unique_cuisines"]["buckets"]
+            ]
+        )
+        courses = sorted(
+            [
+                bucket["key"]
+                for bucket in response["aggregations"]["unique_courses"]["buckets"]
+            ]
+        )
+        diets = sorted(
+            [
+                bucket["key"]
+                for bucket in response["aggregations"]["unique_diets"]["buckets"]
+            ]
+        )
+        distinct_ingredients = sorted(
+            [
+                bucket["key"]
+                for bucket in response["aggregations"]["unique_ingredients"]["buckets"]
+            ]
+        )
+
+        print(
+            f"Found {len(cuisines)} cuisines, {len(courses)} courses, {len(diets)} diets, "
+            f"and {len(distinct_ingredients)} ingredients"
+        )
+
+        return distinct_ingredients, cuisines, courses, diets
+
+    except Exception as e:
+        print(f"Error initializing globals from Elasticsearch: {e}")
+        return [], [], [], []
 
 
 def image_to_base64(image):

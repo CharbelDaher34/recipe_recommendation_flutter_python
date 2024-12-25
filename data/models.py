@@ -19,15 +19,15 @@ class Recipe(BaseModel):
     cuisine: str
     course: str
     diet: str
-    image: Optional[HttpUrl]
-    url: Optional[HttpUrl]
-    embedding: List[float] = None
+    image: Optional[str] = None
+    url: Optional[str] = None
+    embedding: Optional[List[float]] = None
 
 
 class Feedback(BaseModel):
     email: EmailStr
-    input_description: str
-    input_image: Optional[HttpUrl]
+    input_description: str = None
+    input_image: str = None
     recipe_id: int
     rating: int
     comment: str

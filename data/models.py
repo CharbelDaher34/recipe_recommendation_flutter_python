@@ -1,5 +1,6 @@
-from pydantic import BaseModel, EmailStr, HttpUrl
+from pydantic import BaseModel, EmailStr, HttpUrl, Field
 from typing import Optional, List
+from datetime import datetime
 
 
 class User(BaseModel):
@@ -31,12 +32,12 @@ class Feedback(BaseModel):
     recipe_ids: List[int]
     rating: int
     comment: str
-    created_at: str
+    created_at: datetime = Field(default_factory=datetime.now)
 
 
 class Review(BaseModel):
     content: str
-    created_at: str
+    created_at: datetime = Field(default_factory=datetime.now)
 
 
 class UserReview(BaseModel):

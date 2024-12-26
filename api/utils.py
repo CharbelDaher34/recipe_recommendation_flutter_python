@@ -20,14 +20,12 @@ import sys
 sys.path.append("../data")
 from models import *
 
+# ===========================================
+# Configuration and Initialization
+# ===========================================
+
 # Configuration constants
 
-USER_EMBEDDINGS_PATH = "./user_embeddings.json"
-RECIPE_EMBEDDINGS_PATH = "./embeddings.json"
-DATA_PATH = "./data.csv"
-FEEDBACK_PATH = "./recipe_feedback.csv"
-RECIPES_ADD_PATH = "./recipes_add.csv"
-REVIEWS_PATH = "./user_reviews.csv"
 device = "cpu"
 
 # Create Elasticsearch client
@@ -54,23 +52,6 @@ try:
         print("Could not connect to Elasticsearch")
 except Exception as e:
     print(f"Connection failed: {e}")
-
-
-# def initialize_globals():
-#     """Initialize global variables used across the application"""
-#     global df, distinct_ingredients, cuisines, courses, diets
-#     df = pd.read_csv(DATA_PATH)
-#     print(df.head())
-#     df["Cleaned_Ingredients"] = df["Cleaned_Ingredients"].apply(ast.literal_eval)
-
-#     # Initialize distinct values
-#     distinct_ingredients = sorted(
-#         list(set(ingredient for row in df["Cleaned_Ingredients"] for ingredient in row))
-#     )
-#     cuisines = [c for c in df["Cuisine"].dropna().unique() if c.lower() != "unknown"]
-#     courses = [c for c in df["Course"].dropna().unique() if c.lower() != "unknown"]
-#     diets = [d for d in df["Diet"].dropna().unique() if d.lower() != "unknown"]
-#     return df, distinct_ingredients, cuisines, courses, diets
 
 
 def initialize_globals():
@@ -130,10 +111,11 @@ def initialize_globals():
         return [], [], [], []
 
 
-import re
+# ===========================================
+# Image Processing Utilities
+# ===========================================
 
 
-# Helper functions
 def image_to_base64(image):
     buffered = io.BytesIO()
     image.save(buffered, format="PNG")
@@ -155,21 +137,9 @@ def is_base64_image(string):
         return False
 
 
-def load_user_embeddings():
-    if os.path.exists(USER_EMBEDDINGS_PATH):
-        with open(USER_EMBEDDINGS_PATH, "r") as f:
-            return json.load(f)
-    return {}
-
-
-def save_user_embeddings(user_embeddings):
-    try:
-        with open(USER_EMBEDDINGS_PATH, "w") as f:
-            json.dump(user_embeddings, f)
-    except IOError as e:
-        raise HTTPException(
-            status_code=500, detail=f"Failed to save user embeddings: {str(e)}"
-        )
+# ===========================================
+# User Management
+# ===========================================
 
 
 def get_user_profile(
@@ -197,6 +167,98 @@ def get_user_profile(
     except Exception as e:
         print(f"Error retrieving user profile: {e}")
         return None
+
+
+def create_user(
+    user: User, es_client: Elasticsearch = es, index_name: str = "users"
+) -> bool:
+    """
+    Index a User model instance into Elasticsearch if it doesn't already exist
+
+    Args:
+        user: User model instance
+        es_client: Elasticsearch client instance
+        index_name: Name of the Elasticsearch index for users (default: "users")
+
+    Returns:
+        bool: True if user was indexed successfully, False if user already exists or error occurs
+    """
+    try:
+        # Check if user already exists
+        if es_client.exists(index=index_name, id=user.email):
+            print(f"User {user.email} already exists in {index_name}")
+            return False
+
+        # Convert User model to dictionary
+        doc = user.model_dump()
+
+        # Use email as document ID since it's unique
+        es_client.index(index=index_name, id=user.email, document=doc)
+        print(f"Successfully indexed user {user.email} to {index_name}")
+        return True
+
+    except Exception as e:
+        print(f"Error indexing user: {e}")
+        return False
+
+
+def login_user(
+    user: User, es_client: Elasticsearch = es, index_name: str = "users"
+) -> bool:
+    """
+    Verify user credentials against Elasticsearch
+
+    Args:
+        user: User model instance containing email and password
+        es_client: Elasticsearch client instance
+        index_name: Name of the Elasticsearch index for users (default: "users")
+
+    Returns:
+        bool: True if credentials are valid, False otherwise
+    """
+    try:
+        # Check if user exists and get their data
+        if not es_client.exists(index=index_name, id=user.email):
+            print("User not found")
+            return False
+
+        # Get user data
+        user_data = es_client.get(index=index_name, id=user.email)["_source"]
+
+        # Check if password matches
+        # NOTE: In production, you should use proper password hashing and verification
+        if user_data["password"] == user.password:
+            print("Login successful")
+            return True
+        else:
+            print("Invalid password")
+            return False
+
+    except Exception as e:
+        print(f"Error during login: {e}")
+        return False
+
+
+# ===========================================
+# Embedding Management
+# ===========================================
+
+
+# def load_user_embeddings():
+#     if os.path.exists(USER_EMBEDDINGS_PATH):
+#         with open(USER_EMBEDDINGS_PATH, "r") as f:
+#             return json.load(f)
+#     return {}
+
+
+# def save_user_embeddings(user_embeddings):
+#     try:
+#         with open(USER_EMBEDDINGS_PATH, "w") as f:
+#             json.dump(user_embeddings, f)
+#     except IOError as e:
+#         raise HTTPException(
+#             status_code=500, detail=f"Failed to save user embeddings: {str(e)}"
+#         )
 
 
 def index_user_embedding(
@@ -261,29 +323,6 @@ def update_user_embeddings(email, new_embedding, alpha=0.8):
     index_user_embedding(email, updated_embedding_list)
 
 
-def filter_df(df, **kwargs):
-    filtered_df = df.copy()
-    for key, value in kwargs.items():
-        if key == "Title" or not value:
-            continue
-        if key not in df.columns:
-            raise ValueError(f"Column '{key}' is not in the DataFrame.")
-
-        if pd.api.types.is_numeric_dtype(df[key]):
-            filtered_df = filtered_df[filtered_df[key] <= value]
-        elif pd.api.types.is_string_dtype(df[key]):
-            filtered_df = filtered_df[filtered_df[key].isin(value)]
-        elif key == "Cleaned_Ingredients":
-            filtered_df = filtered_df[
-                filtered_df[key].apply(
-                    lambda ingredients: any(
-                        ingredient in ingredients for ingredient in value
-                    )
-                )
-            ]
-    return filtered_df
-
-
 def compute_average_embedding(title_text=None, image=None):
     embeddings = []
     if title_text:
@@ -312,136 +351,6 @@ def compute_average_embedding(title_text=None, image=None):
 
     avg_embedding = np.mean(embeddings, axis=0)
     return avg_embedding.tolist()
-
-
-# Function to find the most similar recipes
-def find_most_similar_recipe(avg_embedding, df, top_n=5):
-    with open(RECIPE_EMBEDDINGS_PATH, "r") as f:
-        recipe_embeddings = json.load(f)
-
-    # Convert all IDs to integers for consistency
-    df_ids = set(df["ID"].astype(int))
-    filtered_embeddings = {
-        int(k): v for k, v in recipe_embeddings.items() if int(k) in df_ids
-    }
-
-    if not filtered_embeddings:
-        return df.head(top_n)["ID"].astype(int).tolist()
-
-    recipe_ids = list(filtered_embeddings.keys())
-    embeddings = np.array(
-        [np.array(embed).flatten() for embed in filtered_embeddings.values()]
-    )
-    avg_embedding = np.array(avg_embedding).reshape(1, -1)
-
-    similarities = cosine_similarity(avg_embedding, embeddings)[0]
-    top_indices = similarities.argsort()[-top_n:][::-1]
-    top_ids = [recipe_ids[i] for i in top_indices]  # No need to convert to int again
-
-    return top_ids
-
-
-### Feedback part
-import csv
-from deep_translator import GoogleTranslator
-from langdetect import detect
-
-
-# def is_hindi(text):
-#     return detect(text) == "hi"
-
-
-# def translate_text(text, target_lang, source_lang="auto"):
-#     translator = GoogleTranslator(source=source_lang, target=target_lang)
-#     return translator.translate(text)
-
-
-def update_embedding_from_feedback(email, description, image, rating):
-    if not isinstance(rating, (int, float)) or rating < 0 or rating > 5:
-        raise ValueError("Rating must be a number between 0 and 5")
-
-    normalized_rating = rating / 5  # Normalize rating once
-
-    if image is not None:
-        try:
-            image_data = base64.b64decode(image)
-            image = Image.open(BytesIO(image_data))
-        except Exception as e:
-            print(f"Warning: Failed to process image: {str(e)}")
-            image = None
-
-    avg_embedding = compute_average_embedding(description, image)
-    update_user_embeddings(
-        email,
-        new_embedding=list(avg_embedding),
-        alpha=normalized_rating,
-    )
-
-
-# def save_feedback(user_id, recipe_titles, rating, title_text, image):
-#     try:
-#         feedback_data = {
-#             "user_id": user_id,
-#             "recipe_titles": recipe_titles,
-#             "rating": rating,
-#         }
-
-#         with open(FEEDBACK_PATH, mode="a", newline="") as file:
-#             writer = csv.DictWriter(file, fieldnames=feedback_data.keys())
-#             if file.tell() == 0:
-#                 writer.writeheader()
-#             writer.writerow(feedback_data)
-#         update_embedding_from_feedback(user_id, title_text, image, rating)
-#     except Exception as e:
-#         raise HTTPException(
-#             status_code=500, detail=f"Failed to save feedback: {str(e)}"
-#         )
-
-
-def index_feedback(
-    feedback: Feedback, es_client: Elasticsearch, index_name: str = "feedback"
-) -> bool:
-    """
-    Index a Feedback model instance into Elasticsearch
-
-    Args:
-        feedback: Feedback model instance
-        es_client: Elasticsearch client instance
-        index_name: Name of the Elasticsearch index (default: "feedback")
-
-    Returns:
-        bool: True if feedback was indexed successfully, False if error occurs
-    """
-    try:
-        # Convert Feedback model to dictionary
-        doc = feedback.model_dump()
-
-        # Generate a unique ID (you might want to use a different strategy)
-        doc_id = f"{feedback.email}_{feedback.created_at}"
-
-        # Index the document
-        es_client.index(index=index_name, id=doc_id, document=doc)
-        print(
-            f"Successfully indexed feedback from {feedback.email} at {feedback.created_at}"
-        )
-        update_embedding_from_feedback(
-            feedback.email,
-            feedback.input_description,
-            feedback.input_image,
-            feedback.rating,
-        )
-
-        return True
-
-    except Exception as e:
-        print(f"Error indexing feedback: {e}")
-        return False
-
-
-# Define FastAPI endpoint
-
-
-# embeddings
 
 
 def get_embeddings(strings_list, api_url="http://localhost:8000/encode"):
@@ -494,24 +403,58 @@ def get_embeddings(strings_list, api_url="http://localhost:8000/encode"):
     return embeddings_list
 
 
-def save_review(review_text):
-    """Save a user review to the reviews CSV file"""
-    review_data = {"review_text": review_text}
-
-    with open(REVIEWS_PATH, mode="a", newline="") as file:
-        writer = csv.DictWriter(file, fieldnames=review_data.keys())
-        if file.tell() == 0:
-            writer.writeheader()
-        writer.writerow(review_data)
+# ===========================================
+# Recipe Management
+# ===========================================
 
 
-# def add_recipe(recipe_data):
-#     """Add a new recipe to the recipes CSV file"""
-#     with open(RECIPES_ADD_PATH, "a", newline="") as file:
-#         writer = csv.DictWriter(file, fieldnames=recipe_data.keys())
-#         if file.tell() == 0:
-#             writer.writeheader()
-#         writer.writerow(recipe_data)
+def filter_df(df, **kwargs):
+    filtered_df = df.copy()
+    for key, value in kwargs.items():
+        if key == "Title" or not value:
+            continue
+        if key not in df.columns:
+            raise ValueError(f"Column '{key}' is not in the DataFrame.")
+
+        if pd.api.types.is_numeric_dtype(df[key]):
+            filtered_df = filtered_df[filtered_df[key] <= value]
+        elif pd.api.types.is_string_dtype(df[key]):
+            filtered_df = filtered_df[filtered_df[key].isin(value)]
+        elif key == "Cleaned_Ingredients":
+            filtered_df = filtered_df[
+                filtered_df[key].apply(
+                    lambda ingredients: any(
+                        ingredient in ingredients for ingredient in value
+                    )
+                )
+            ]
+    return filtered_df
+
+
+def find_most_similar_recipe(avg_embedding, df, top_n=5):
+    with open(RECIPE_EMBEDDINGS_PATH, "r") as f:
+        recipe_embeddings = json.load(f)
+
+    # Convert all IDs to integers for consistency
+    df_ids = set(df["ID"].astype(int))
+    filtered_embeddings = {
+        int(k): v for k, v in recipe_embeddings.items() if int(k) in df_ids
+    }
+
+    if not filtered_embeddings:
+        return df.head(top_n)["ID"].astype(int).tolist()
+
+    recipe_ids = list(filtered_embeddings.keys())
+    embeddings = np.array(
+        [np.array(embed).flatten() for embed in filtered_embeddings.values()]
+    )
+    avg_embedding = np.array(avg_embedding).reshape(1, -1)
+
+    similarities = cosine_similarity(avg_embedding, embeddings)[0]
+    top_indices = similarities.argsort()[-top_n:][::-1]
+    top_ids = [recipe_ids[i] for i in top_indices]  # No need to convert to int again
+
+    return top_ids
 
 
 def predict_recipes(data, df):
@@ -589,77 +532,6 @@ def predict_recipes(data, df):
     return recipe_titles, details
 
 
-## user login and signup
-def create_user(
-    user: User, es_client: Elasticsearch = es, index_name: str = "users"
-) -> bool:
-    """
-    Index a User model instance into Elasticsearch if it doesn't already exist
-
-    Args:
-        user: User model instance
-        es_client: Elasticsearch client instance
-        index_name: Name of the Elasticsearch index for users (default: "users")
-
-    Returns:
-        bool: True if user was indexed successfully, False if user already exists or error occurs
-    """
-    try:
-        # Check if user already exists
-        if es_client.exists(index=index_name, id=user.email):
-            print(f"User {user.email} already exists in {index_name}")
-            return False
-
-        # Convert User model to dictionary
-        doc = user.model_dump()
-
-        # Use email as document ID since it's unique
-        es_client.index(index=index_name, id=user.email, document=doc)
-        print(f"Successfully indexed user {user.email} to {index_name}")
-        return True
-
-    except Exception as e:
-        print(f"Error indexing user: {e}")
-        return False
-
-
-def login_user(
-    user: User, es_client: Elasticsearch = es, index_name: str = "users"
-) -> bool:
-    """
-    Verify user credentials against Elasticsearch
-
-    Args:
-        user: User model instance containing email and password
-        es_client: Elasticsearch client instance
-        index_name: Name of the Elasticsearch index for users (default: "users")
-
-    Returns:
-        bool: True if credentials are valid, False otherwise
-    """
-    try:
-        # Check if user exists and get their data
-        if not es_client.exists(index=index_name, id=user.email):
-            print("User not found")
-            return False
-
-        # Get user data
-        user_data = es_client.get(index=index_name, id=user.email)["_source"]
-
-        # Check if password matches
-        # NOTE: In production, you should use proper password hashing and verification
-        if user_data["password"] == user.password:
-            print("Login successful")
-            return True
-        else:
-            print("Invalid password")
-            return False
-
-    except Exception as e:
-        print(f"Error during login: {e}")
-        return False
-
-
 def add_recipe(
     recipe: Recipe, es_client: Elasticsearch, index_name: str = "recipe_additions"
 ) -> None:
@@ -686,3 +558,118 @@ def add_recipe(
         print(f"Successfully indexed pending recipe {recipe.id} to {index_name}")
     except Exception as e:
         print(f"Error indexing pending recipe: {e}")
+
+
+# ===========================================
+# Feedback and Reviews
+# ===========================================
+
+
+def update_embedding_from_feedback(email, description, image, rating):
+    if not isinstance(rating, (int, float)) or rating < 0 or rating > 5:
+        raise ValueError("Rating must be a number between 0 and 5")
+
+    normalized_rating = rating / 5  # Normalize rating once
+
+    if image is not None:
+        try:
+            image_data = base64.b64decode(image)
+            image = Image.open(BytesIO(image_data))
+        except Exception as e:
+            print(f"Warning: Failed to process image: {str(e)}")
+            image = None
+
+    avg_embedding = compute_average_embedding(description, image)
+    update_user_embeddings(
+        email,
+        new_embedding=list(avg_embedding),
+        alpha=normalized_rating,
+    )
+
+
+def index_feedback(
+    feedback: Feedback, es_client: Elasticsearch, index_name: str = "feedback"
+) -> bool:
+    """
+    Index a Feedback model instance into Elasticsearch
+
+    Args:
+        feedback: Feedback model instance
+        es_client: Elasticsearch client instance
+        index_name: Name of the Elasticsearch index (default: "feedback")
+
+    Returns:
+        bool: True if feedback was indexed successfully, False if error occurs
+    """
+    try:
+        # Convert Feedback model to dictionary
+        doc = feedback.model_dump()
+
+        # Generate a unique ID (you might want to use a different strategy)
+        doc_id = f"{feedback.email}_{feedback.created_at}"
+
+        # Index the document
+        es_client.index(index=index_name, id=doc_id, document=doc)
+        print(
+            f"Successfully indexed feedback from {feedback.email} at {feedback.created_at}"
+        )
+        update_embedding_from_feedback(
+            feedback.email,
+            feedback.input_description,
+            feedback.input_image,
+            feedback.rating,
+        )
+
+        return True
+
+    except Exception as e:
+        print(f"Error indexing feedback: {e}")
+        return False
+
+
+def save_review(
+    email: str,
+    review: Review,  # Changed from review_text: str
+    es_client: Elasticsearch = es,
+    index_name: str = "user_reviews",
+) -> bool:
+    """
+    Save a user review to Elasticsearch. If the user already has reviews, append to their list.
+    If not, create a new document for the user.
+
+    Args:
+        email: User's email address
+        review: Review object containing content and creation date
+        es_client: Elasticsearch client instance
+        index_name: Name of the Elasticsearch index (default: "user_reviews")
+
+    Returns:
+        bool: True if review was saved successfully, False otherwise
+    """
+    try:
+        # Check if user already has reviews
+        if es_client.exists(index=index_name, id=email):
+            # Get existing reviews
+            result = es_client.get(index=index_name, id=email)
+            user_reviews = result["_source"]["reviews"]
+
+            # Append new review
+            user_reviews.append(review.model_dump())
+
+            # Update document
+            update_doc = {"doc": {"reviews": user_reviews}}
+            es_client.update(index=index_name, id=email, body=update_doc)
+        else:
+            # Create new UserReview document
+            user_review = UserReview(email=email, reviews=[review])
+            # Index new document
+            es_client.index(
+                index=index_name, id=email, document=user_review.model_dump()
+            )
+
+        print(f"Successfully saved review for user {email}")
+        return True
+
+    except Exception as e:
+        print(f"Error saving review: {e}")
+        return False

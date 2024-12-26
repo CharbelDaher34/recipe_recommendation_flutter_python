@@ -1,6 +1,6 @@
 from fastapi import FastAPI, Request, HTTPException
 from utils import *
-from models import User, Recipe, Feedback  # Add this import
+from models import User, Recipe, Feedback, Review  # Add this import
 from datetime import timedelta
 
 # from globals import df, distinct_ingredients, cuisines, courses, diets
@@ -101,13 +101,23 @@ async def add_recipe_endpoint(recipe: Recipe, request: Request = None):
 
 @app.post("/save-review/")
 @log_error
-async def save_review_endpoint(request: Request):
+@require_auth
+async def save_review_endpoint(email: str, review: Review, request: Request):
+    """
+    Save a user review
+
+    Args:
+        email: User's email address
+        review: Review model instance containing review content and timestamp
+        request: FastAPI Request object containing user authentication info
+    """
     try:
-        data = await request.json()
-        save_review(data.get("review_text"))
-        return {"status": "Review saved successfully"}
+        success = save_review(email, review)
+        if success:
+            return {"status": "Review saved successfully"}
+        raise HTTPException(status_code=500, detail="Failed to save review")
     except Exception as e:
-        raise HTTPException(status_code=500, detail="Review not saved")
+        raise HTTPException(status_code=500, detail=f"Failed to save review: {str(e)}")
 
 
 @app.post("/submit-feedback/")

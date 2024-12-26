@@ -1,13 +1,72 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+*.egg
+MANIFEST
+
+# Virtual Environment
+venv/
+.venv/
+env/
+ENV/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+*.ipynb_checkpoints/
+*/.ipynb_checkpoints/*
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Logs
+*.log
+api_errors.log
+
+# Docker
+.docker/
+docker/elasticsearch_data/
+elasticsearch_data/
+
+# Model files and cache
 *.pt
-*.bin
-api/jina_clip_v1_model/*
-*.csv
-api/backend/*
-gradio_app/frontend/*
+*.pth
+.cache/
+api/jina_clip_v1_model/
+embeddingModel/jina_clip_v1_model/
+*.model
 
-# Add these lines to handle large files
-api/embeddings.json
-data/embeddings.json
-*.json.gz
+# Environment variables
+.env
+.env.local
+.env.*.local
 
-docker/elasticsearch_data/*
+# System Files
+.DS_Store
+Thumbs.db
+
+# Test files
+test_*.py
+*_test.py
+testApi.ipynb
+
+# Elastic Search
+esdata/

@@ -10,6 +10,7 @@ import logging
 from functools import wraps
 import traceback
 from auth_utils import require_auth, create_access_token, ACCESS_TOKEN_EXPIRE_MINUTES
+from elasticSearchInitialisation import initialize_elasticsearch
 
 # Add these near the top of your file, after imports
 logging.basicConfig(
@@ -17,6 +18,9 @@ logging.basicConfig(
     level=logging.ERROR,
     format="%(asctime)s - %(levelname)s - %(message)s",
 )
+
+# Add global es variable
+es = None
 
 
 def log_error(func):
@@ -56,9 +60,18 @@ def log_error(func):
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Lifespan context manager for FastAPI application"""
-    global df, distinct_ingredients, cuisines, courses, diets
+    global df, distinct_ingredients, cuisines, courses, diets, es
+
+    initialize_elasticsearch()
+
+    # Initialize other globals
     distinct_ingredients, cuisines, courses, diets = initialize_globals()
+
     yield
+
+    # Cleanup (if needed)
+    if es is not None:
+        es.close()
 
 
 app = FastAPI(title="Recipe Recommendation API", lifespan=lifespan)

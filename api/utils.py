@@ -1,15 +1,8 @@
-from fastapi import HTTPException
 from PIL import Image
-from deep_translator import GoogleTranslator
-from langdetect import detect
-from sklearn.metrics.pairwise import cosine_similarity
-import torch
+
 import pandas as pd
 import numpy as np
-import ast
-import json
-import csv
-import os
+
 import base64
 from io import BytesIO
 import requests
@@ -30,7 +23,7 @@ device = "cpu"
 
 # Create Elasticsearch client
 es = Elasticsearch(
-    "http://localhost:9200",  # Changed from https to http
+    "http://elasticsearch:9200",  # Changed from https to http
     basic_auth=("elastic", "pass"),  # Use your actual password
 )
 # Update disk watermark thresholds

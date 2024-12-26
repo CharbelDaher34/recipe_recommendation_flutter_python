@@ -24,16 +24,18 @@ services:
       timeout: 10s
       retries: 3
 
-  elasticsearch-init:
+  api:
     build:
-      context: ./data
-      dockerfile: Dockerfile.init
-    container_name: elasticsearch-init
+      context: ../api
+      dockerfile: Dockerfile
+    container_name: recipe-api
+    ports:
+      - "8001:8001"
     depends_on:
       elasticsearch:
         condition: service_healthy
-    volumes:
-      - ./data/data.csv:/app/data.csv
+    environment:
+      - ELASTICSEARCH_URL=http://elasticsearch:9200
     networks:
       - elk
 

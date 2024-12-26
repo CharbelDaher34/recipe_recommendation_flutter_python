@@ -235,7 +235,7 @@ def index_recipes_data(es_client, data_path="./data.csv", batch_size=1000):
         print(f"Error indexing recipes data: {e}")
 
 
-def main():
+def initialize_elasticsearch():
     """Main function to initialize Elasticsearch and index data"""
     try:
         # Create Elasticsearch client
@@ -253,15 +253,20 @@ def main():
         print("\nCreating indices...")
         create_indices(es)
 
-        # Index recipes data
-        print("\nIndexing recipes data...")
-        index_recipes_data(es)
+        # Check number of documents in recipes index
+        doc_count = es.count(index="recipes")["count"]
+        print(f"\nCurrent number of documents in recipes index: {doc_count}")
+
+        if doc_count < 5000:
+            # Index recipes data
+            print("\nIndexing recipes data...")
+            index_recipes_data(es)
+        else:
+            print(
+                "\nSkipping indexing as recipes index already has sufficient documents."
+            )
 
         print("\nInitialization complete!")
 
     except Exception as e:
         print(f"Error during initialization: {e}")
-
-
-if __name__ == "__main__":
-    main()

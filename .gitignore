@@ -70,3 +70,4 @@ testApi.ipynb
 
 # Elastic Search
 esdata/
+docker/elasticsearch_data/*

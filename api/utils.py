@@ -284,6 +284,11 @@ def index_user_embedding(
         if not es_client.exists(index=index_name, id=email):
             print(f"User {email} not found")
             return False
+        # Handle nested lists by flattening if necessary
+        if isinstance(embedding[0], list):
+            embedding = embedding[0]
+        # Ensure embedding is a list of floats
+        embedding = [float(x) for x in embedding]
 
         # Update only the embedding field
         update_doc = {"doc": {"embedding": embedding}}

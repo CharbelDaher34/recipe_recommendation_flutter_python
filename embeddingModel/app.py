@@ -79,7 +79,7 @@ load_balancer = LoadBalancer()
 # Initialize model instances
 load_balancer.add_instance("model1", "./jina_clip_v1_model")
 load_balancer.add_instance("model2", "./jina_clip_v1_model")
-load_balancer.add_instance("model3", "./jina_clip_v1_model")
+# load_balancer.add_instance("model3", "./jina_clip_v1_model")
 # Add more instances as needed
 
 
@@ -119,38 +119,7 @@ def is_base64_image(string):
         return False
 
 
-# # Load model (do this once at startup)
-# model = AutoModel.from_pretrained("./jina_clip_v1_model", trust_remote_code=True)
-# model = torch.load("./jina_clip_v1_model/jina.pt", map_location=torch.device("cpu"))
-
-
-# @app.post("/encode")
-# async def encode_string(input_data: InputString):
-#     result = encode_input(input_data.content)
-#     if result["status"] == "error":
-#         raise HTTPException(status_code=400, detail=result["message"])
-#     return result
-
-
-# # Test endpoint
-# @app.get("/")
-# async def root():
-#     return {"message": "CLIP Encoding API is running"}
-
-
 if __name__ == "__main__":
     import uvicorn
 
-    # # Test the API with some examples
-    # print("Testing text encoding...")
-    # test_text = encode_input("hello world")
-    # print(f"Text result: {test_text['type']}, Shape: {test_text['shape']}")
-
-    # print("\nTesting image encoding...")
-    # test_image = Image.open("../../compression_comparison.png")
-    # base64_string = image_to_base64(test_image)
-    # image_result = encode_input(base64_string)
-    # print(f"Image result: {image_result['type']}, Shape: {image_result['shape']}")
-
-    # Run the API server
     uvicorn.run(app, host="0.0.0.0", port=8000)

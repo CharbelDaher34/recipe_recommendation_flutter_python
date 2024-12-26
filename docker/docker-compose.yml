@@ -18,6 +18,24 @@ services:
       - "9300:9300"
     networks:
       - elk
+    healthcheck:
+      test: ["CMD-SHELL", "curl -s http://localhost:9200 >/dev/null || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  elasticsearch-init:
+    build:
+      context: ./data
+      dockerfile: Dockerfile.init
+    container_name: elasticsearch-init
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+    volumes:
+      - ./data/data.csv:/app/data.csv
+    networks:
+      - elk
 
 networks:
   elk:

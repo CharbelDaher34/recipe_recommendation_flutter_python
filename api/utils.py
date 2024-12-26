@@ -354,8 +354,13 @@ def compute_average_embedding(title_text=None, image=None):
     if len(embeddings) == 0:
         raise ValueError("No valid embeddings could be generated from the input")
 
+    # Ensure all embeddings have the same shape
+    embeddings = [emb.flatten() for emb in embeddings]
+
+    # Compute the average of all available embeddings
     avg_embedding = np.mean(embeddings, axis=0)
-    return avg_embedding.tolist()
+
+    return avg_embedding
 
 
 def get_embeddings(strings_list, api_url="http://localhost:8000/encode"):
@@ -413,68 +418,209 @@ def get_embeddings(strings_list, api_url="http://localhost:8000/encode"):
 # ===========================================
 
 
-def filter_df(df, **kwargs):
-    filtered_df = df.copy()
+def filterDf(**kwargs) -> tuple[List[Recipe], pd.DataFrame]:
+    """
+    Create and execute an Elasticsearch query based on filter parameters
+
+    Args:
+        es_client: Elasticsearch client instance
+        **kwargs: Filter parameters (prep_time, cook_time, cuisine, course, diet, ingredients)
+
+    Returns:
+        Tuple[List[Recipe], pd.DataFrame]: Tuple containing:
+            - List of matching Recipe model instances
+            - DataFrame containing the same data
+    """
+    # Start with a match_all query
+    query = {"bool": {"must": [], "filter": []}}
+
     for key, value in kwargs.items():
         if key == "Title" or not value:
             continue
-        if key not in df.columns:
-            raise ValueError(f"Column '{key}' is not in the DataFrame.")
 
-        if pd.api.types.is_numeric_dtype(df[key]):
-            filtered_df = filtered_df[filtered_df[key] <= value]
-        elif pd.api.types.is_string_dtype(df[key]):
-            filtered_df = filtered_df[filtered_df[key].isin(value)]
-        elif key == "Cleaned_Ingredients":
-            filtered_df = filtered_df[
-                filtered_df[key].apply(
-                    lambda ingredients: any(
-                        ingredient in ingredients for ingredient in value
-                    )
-                )
-            ]
-    return filtered_df
+        if key in ["prep_time", "cook_time"]:
+            query["bool"]["filter"].append({"range": {key.lower(): {"lte": value}}})
+        elif key in ["cuisine", "course", "diet"]:
+            if isinstance(value, list) and value:
+                query["bool"]["must"].append({"terms": {key.lower(): value}})
+        elif key == "Cleaned_Ingredients" and value:
+            query["bool"]["must"].append({"terms": {"ingredients.keyword": value}})
+
+    # Construct the full search body
+    search_body = {"query": query, "size": 100}
+
+    try:
+        # Execute the search
+        response = es.search(index="recipes", body=search_body)
+
+        # Convert hits to Recipe models and collect data for DataFrame
+        recipes = []
+        df_data = []
+
+        for hit in response["hits"]["hits"]:
+            source = hit["_source"]
+            recipe = Recipe(
+                id=source["id"],
+                title=source["title"],
+                ingredients=source["ingredients"],
+                instructions=source["instructions"],
+                prep_time=source["prep_time"],
+                cook_time=source["cook_time"],
+                cuisine=source["cuisine"],
+                course=source["course"],
+                diet=source["diet"],
+                image=source.get("image"),
+                url=source.get("url"),
+                embedding=source.get("embedding"),
+            )
+            recipes.append(recipe)
+
+            # Add the same data to the DataFrame collection
+            df_data.append(
+                {
+                    "id": recipe.id,
+                    "title": recipe.title,
+                    "ingredients": recipe.ingredients,
+                    "instructions": recipe.instructions,
+                    "prep_time": recipe.prep_time,
+                    "cook_time": recipe.cook_time,
+                    "cuisine": recipe.cuisine,
+                    "course": recipe.course,
+                    "diet": recipe.diet,
+                    "embedding": recipe.embedding,
+                    "url": recipe.url,
+                }
+            )
+
+        # Create DataFrame
+        df = pd.DataFrame(df_data)
+
+        return df
+
+    except Exception as e:
+        print(f"Error executing Elasticsearch query: {e}")
+        return pd.DataFrame()
 
 
-def find_most_similar_recipe(avg_embedding, df, top_n=5):
-    with open(RECIPE_EMBEDDINGS_PATH, "r") as f:
-        recipe_embeddings = json.load(f)
+def find_most_similar_recipe(
+    avg_embedding, ids, top_n=5, min_similarity=0.4
+) -> tuple[List[Recipe], pd.DataFrame]:
+    """
+    Find recipes from a specific set of IDs with embedding similarity > min_similarity
 
-    # Convert all IDs to integers for consistency
-    df_ids = set(df["ID"].astype(int))
-    filtered_embeddings = {
-        int(k): v for k, v in recipe_embeddings.items() if int(k) in df_ids
+    Args:
+        avg_embedding: Query embedding vector
+        ids: List of recipe IDs to search within
+        top_n: Maximum number of results to return (default 5)
+        min_similarity: Minimum similarity threshold (default 0.7)
+
+    Returns:
+        tuple: (List[Recipe], pd.DataFrame) containing similar recipes
+    """
+    # Convert embedding to list if it's numpy array
+    if hasattr(avg_embedding, "tolist"):
+        avg_embedding = avg_embedding.tolist()
+
+    # Query that combines ID filtering with similarity scoring
+    query = {
+        "query": {
+            "script_score": {
+                "query": {"terms": {"id": ids}},  # Filter by provided IDs
+                "script": {
+                    "source": "cosineSimilarity(params.query_vector, 'embedding') + 1.0",
+                    "params": {"query_vector": avg_embedding},
+                },
+            }
+        },
+        "min_score": 1 + min_similarity,  # Add 1 to adjust for the +1.0 in script
+        "size": top_n,
+        "_source": True,  # Get all fields
     }
 
-    if not filtered_embeddings:
-        return df.head(top_n)["ID"].astype(int).tolist()
+    try:
+        # Execute search
+        response = es.search(index="recipes", body=query)
 
-    recipe_ids = list(filtered_embeddings.keys())
-    embeddings = np.array(
-        [np.array(embed).flatten() for embed in filtered_embeddings.values()]
-    )
-    avg_embedding = np.array(avg_embedding).reshape(1, -1)
+        # Convert hits to Recipe models and collect data for DataFrame
+        recipes = []
+        df_data = []
 
-    similarities = cosine_similarity(avg_embedding, embeddings)[0]
-    top_indices = similarities.argsort()[-top_n:][::-1]
-    top_ids = [recipe_ids[i] for i in top_indices]  # No need to convert to int again
+        for hit in response["hits"]["hits"]:
+            source = hit["_source"]
+            similarity = hit["_score"] - 1.0  # Convert back to -1 to 1 range
 
-    return top_ids
+            # Create Recipe model
+            recipe = Recipe(
+                id=source["id"],
+                title=source["title"],
+                ingredients=source["ingredients"],
+                instructions=source["instructions"],
+                prep_time=source["prep_time"],
+                cook_time=source["cook_time"],
+                cuisine=source["cuisine"],
+                course=source["course"],
+                diet=source["diet"],
+                image=source.get("image"),
+                url=source.get("url"),
+                embedding=source.get("embedding"),
+            )
+            recipes.append(recipe)
+
+            # Add data for DataFrame
+            df_data.append(
+                {
+                    "id": recipe.id,
+                    "title": recipe.title,
+                    "ingredients": recipe.ingredients,
+                    "instructions": recipe.instructions,
+                    "prep_time": recipe.prep_time,
+                    "cook_time": recipe.cook_time,
+                    "cuisine": recipe.cuisine,
+                    "course": recipe.course,
+                    "diet": recipe.diet,
+                    "embedding": recipe.embedding,
+                    "url": recipe.url,
+                    "similarity": similarity,
+                }
+            )
+
+        # Create DataFrame
+        df = pd.DataFrame(df_data)
+
+        return df
+
+    except Exception as e:
+        print(f"Error finding similar recipes: {e}")
+        return pd.DataFrame(
+            columns=[
+                "id",
+                "title",
+                "ingredients",
+                "instructions",
+                "prep_time",
+                "cook_time",
+                "cuisine",
+                "course",
+                "diet",
+                "embedding",
+                "url",
+                "similarity",
+            ]
+        )
 
 
-def predict_recipes(data, df):
+def predict_recipes(data):
     """
     Process prediction request and return recommended recipes.
 
     Args:
         data (dict): Request data containing user preferences and filters
-        df (pd.DataFrame): Recipe dataframe
 
     Returns:
         tuple: (recipe_titles, details) containing recommended recipes
     """
     # Extract data from request
-    user_id = data.get("user_id")
+    email = data.get("email")
     title_text = data.get("title_text")
     prep_time = data.get("prep_time")
     cook_time = data.get("cook_time")
@@ -483,10 +629,16 @@ def predict_recipes(data, df):
     selected_diets = data.get("selected_diets", [])
     selected_ingredients = data.get("selected_ingredients", [])
     image = data.get("image", None)
-
+    print(
+        prep_time,
+        cook_time,
+        selected_cuisines,
+        selected_courses,
+        selected_diets,
+        selected_ingredients,
+    )
     # Filter the DataFrame
-    filtered_df = filter_df(
-        df,
+    filtered_df = filterDf(
         Prep_Time=prep_time,
         Cook_Time=cook_time,
         Cuisine=selected_cuisines,
@@ -494,47 +646,27 @@ def predict_recipes(data, df):
         Diet=selected_diets,
         Cleaned_Ingredients=selected_ingredients,
     )
-
     if filtered_df.empty:
         return [], "No similar recipes found"
 
-    # Process image if provided
-    if image is not None:
-        image_data = base64.b64decode(image)
-        image = Image.open(BytesIO(image_data))
-
     # Compute embeddings and get recommendations
     avg_embedding = compute_average_embedding(title_text, image)
-    user_embeddings = load_user_embeddings()
-    user_embedding = get_user_embeddings(user_id, user_embeddings)
 
-    avg_embedding = np.array(avg_embedding)
-    if user_embedding is not None:
-        user_embedding = np.array(user_embedding)
+    # Get user embedding from Elasticsearch
+    user = get_user_profile(email)
+    if user and user.embedding is not None:
+        user_embedding = np.array(user.embedding)
+        avg_embedding = np.array(avg_embedding)
+        # Combine user preferences with current query
         avg_embedding = 0.8 * avg_embedding + 0.2 * user_embedding
-
     # Get final recommendations
     if avg_embedding is None:
-        final_df = filtered_df.head(5)
+        return filtered_df.head(5)
     else:
-        top_ids = find_most_similar_recipe(avg_embedding, filtered_df, top_n=5)
-        final_df = filtered_df[filtered_df["ID"].apply(lambda x: x in top_ids)]
-
-    recipe_titles = final_df["Title"].tolist()
-    details = final_df[
-        [
-            "Title",
-            "Cuisine",
-            "Course",
-            "Diet",
-            "Prep_Time",
-            "Cook_Time",
-            "Cleaned_Ingredients",
-            "Instructions",
-        ]
-    ].to_markdown(index=False)
-
-    return recipe_titles, details
+        ids = filtered_df["id"]
+        return find_most_similar_recipe(
+            avg_embedding, ids, top_n=100, min_similarity=0.3
+        )
 
 
 def add_recipe(

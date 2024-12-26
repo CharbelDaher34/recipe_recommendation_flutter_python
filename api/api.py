@@ -152,8 +152,8 @@ async def submit_feedback(feedback: Feedback, request: Request):
 async def predict(request: Request):
     try:
         data = await request.json()
-        recipe_titles, details = predict_recipes(data, df)
-        return {"titles": recipe_titles, "details": details}
+        details = predict_recipes(data)
+        return {"details": details.to_json()}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

@@ -130,6 +130,10 @@ def initialize_globals():
         return [], [], [], []
 
 
+import re
+
+
+# Helper functions
 def image_to_base64(image):
     buffered = io.BytesIO()
     image.save(buffered, format="PNG")
@@ -139,6 +143,16 @@ def image_to_base64(image):
 def base64_to_image(base64_string):
     img_data = base64.b64decode(base64_string)
     return Image.open(io.BytesIO(img_data))
+
+
+def is_base64_image(string):
+    try:
+        if not re.match("^[A-Za-z0-9+/]*={0,2}$", string):
+            return False
+        image = base64_to_image(string)
+        return True
+    except:
+        return False
 
 
 def load_user_embeddings():
@@ -158,23 +172,93 @@ def save_user_embeddings(user_embeddings):
         )
 
 
-def get_user_embeddings(user_id, user_embeddings):
-    user_id = str(user_id)
-    return list(user_embeddings[user_id]) if user_id in user_embeddings else None
+def get_user_profile(
+    email: str, es_client=es, index_name: str = "users"
+) -> Optional[User]:
+    """
+    Retrieve a user profile from Elasticsearch by email and convert to User model
+
+    Args:
+        email: User's email address
+        es_client: Elasticsearch client instance
+        index_name: Name of the Elasticsearch index (default: "users")
+
+    Returns:
+        Optional[User]: User model instance if found, None otherwise
+    """
+    try:
+        # Get user data by email (used as document ID)
+        result = es_client.get(index=index_name, id=email)
+
+        # Convert Elasticsearch document to User model
+        user_data = result["_source"]
+        return User(**user_data)
+
+    except Exception as e:
+        print(f"Error retrieving user profile: {e}")
+        return None
 
 
-def update_user_embeddings(user_id, user_embeddings, new_embedding, alpha=0.8):
-    user_id = str(user_id)
-    if user_id in user_embeddings:
-        previous_embedding = torch.tensor(user_embeddings[user_id])
-        new_embedding = torch.tensor(new_embedding)
-        updated_embedding = (1 - alpha) * new_embedding + alpha * previous_embedding
-        user_embeddings[user_id] = [float(x) for x in updated_embedding]
+def index_user_embedding(
+    email: str,
+    embedding: List[float],
+    es_client: Elasticsearch = es,
+    index_name: str = "users",
+) -> bool:
+    """
+    Update a user's embedding in Elasticsearch
+
+    Args:
+        email: User's email address (used as document ID)
+        embedding: List of floats representing the user's new embedding
+        es_client: Elasticsearch client instance
+        index_name: Name of the Elasticsearch index
+
+    Returns:
+        bool: True if update was successful, False otherwise
+    """
+    try:
+        # Check if user exists
+        if not es_client.exists(index=index_name, id=email):
+            print(f"User {email} not found")
+            return False
+
+        # Update only the embedding field
+        update_doc = {"doc": {"embedding": embedding}}
+
+        es_client.update(index=index_name, id=email, body=update_doc)
+        print(f"Successfully updated embedding for user {email}")
+        return True
+
+    except Exception as e:
+        print(f"Error updating user embedding: {e}")
+        return False
+
+
+def update_user_embeddings(email, new_embedding, alpha=0.8):
+    """
+    Update a user's embedding using a weighted combination of old and new embeddings
+
+    Args:
+        email: User's email address
+        new_embedding: List or array of new embedding values
+        alpha: Weight for the old embedding (default: 0.8)
+    """
+    user = get_user_profile(email)
+    new_embedding = np.array(new_embedding)
+
+    if user is not None and user.embedding is not None:
+        # Convert existing embedding to numpy array
+        user_embedding = np.array(user.embedding)
+        # Calculate weighted combination
+        updated_embedding = (1 - alpha) * new_embedding + alpha * user_embedding
     else:
-        user_embeddings[user_id] = [float(x) for x in new_embedding]
+        # Use new embedding if user doesn't exist or has no embedding
+        updated_embedding = new_embedding
 
-    if user_embeddings:
-        save_user_embeddings(user_embeddings)
+    # Convert to list of floats and update in Elasticsearch
+    updated_embedding_list = updated_embedding.tolist()
+    index_user_embedding(email, updated_embedding_list)
 
 
 def filter_df(df, **kwargs):
@@ -205,21 +289,29 @@ def compute_average_embedding(title_text=None, image=None):
     if title_text:
         result = get_embeddings([title_text])[0]
         if result.get("type") != "error":
-            title_embedding = torch.tensor(result["embeddings"]).squeeze().to(device)
+            title_embedding = np.array(result["embeddings"])
             embeddings.append(title_embedding)
 
     if image:
-        # Handle image processing...
+        # Convert PIL Image to base64 if needed
+        if isinstance(image, Image.Image):
+            buffered = BytesIO()
+            image.save(buffered, format="PNG")
+            img_str = base64.b64encode(buffered.getvalue()).decode("utf-8")
+        else:
+            # Assume it's already base64 encoded
+            img_str = image
+
         result = get_embeddings([img_str])[0]
         if result.get("type") != "error":
-            image_embedding = torch.tensor(result["embeddings"]).squeeze().to(device)
+            image_embedding = np.array(result["embeddings"])
             embeddings.append(image_embedding)
 
     if len(embeddings) == 0:
         raise ValueError("No valid embeddings could be generated from the input")
 
-    avg_embedding = torch.mean(torch.stack(embeddings), dim=0)
-    return list(avg_embedding.cpu().numpy())
+    avg_embedding = np.mean(embeddings, axis=0)
+    return avg_embedding.tolist()
 
 
 # Function to find the most similar recipes
@@ -264,12 +356,11 @@ from langdetect import detect
 #     return translator.translate(text)
 
 
-def update_embedding_from_feedback(user_id, title_text, image, rating):
+def update_embedding_from_feedback(email, description, image, rating):
     if not isinstance(rating, (int, float)) or rating < 0 or rating > 5:
         raise ValueError("Rating must be a number between 0 and 5")
 
     normalized_rating = rating / 5  # Normalize rating once
-    user_embeddings = load_user_embeddings()
 
     if image is not None:
         try:
@@ -279,10 +370,9 @@ def update_embedding_from_feedback(user_id, title_text, image, rating):
             print(f"Warning: Failed to process image: {str(e)}")
             image = None
 
-    avg_embedding = compute_average_embedding(title_text, image)
+    avg_embedding = compute_average_embedding(description, image)
     update_user_embeddings(
-        user_id,
-        user_embeddings,
+        email,
         new_embedding=list(avg_embedding),
         alpha=normalized_rating,
     )
@@ -334,6 +424,13 @@ def index_feedback(
         print(
             f"Successfully indexed feedback from {feedback.email} at {feedback.created_at}"
         )
+        update_embedding_from_feedback(
+            feedback.email,
+            feedback.input_description,
+            feedback.input_image,
+            feedback.rating,
+        )
+
         return True
 
     except Exception as e:

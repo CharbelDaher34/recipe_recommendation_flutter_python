@@ -6,7 +6,7 @@ class User(BaseModel):
     email: EmailStr
     name: str
     password: str
-    embedding: List[float] = None
+    embedding: Optional[List[float]] = None
 
 
 class Recipe(BaseModel):

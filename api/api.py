@@ -229,6 +229,33 @@ async def login(user: User):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.get("/health")
+async def health_check():
+    try:
+        # Test Elasticsearch connection
+        if es.ping():
+            return {
+                "status": "healthy",
+                "timestamp": datetime.now().isoformat(),
+                "service": "api",
+                "elasticsearch": "connected",
+            }
+        else:
+            return {
+                "status": "unhealthy",
+                "timestamp": datetime.now().isoformat(),
+                "service": "api",
+                "elasticsearch": "disconnected",
+            }
+    except Exception as e:
+        return {
+            "status": "unhealthy",
+            "timestamp": datetime.now().isoformat(),
+            "service": "api",
+            "error": str(e),
+        }
+
+
 if __name__ == "__main__":
     import uvicorn
 

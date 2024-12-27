@@ -30,3 +30,6 @@ testApi.ipynb
 
 # Cache
 .cache/
+
+# Data
+data/

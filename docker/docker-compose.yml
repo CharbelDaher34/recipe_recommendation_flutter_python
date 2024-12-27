@@ -27,10 +27,9 @@ services:
           "-c",
           "import urllib.request; urllib.request.urlopen('http://localhost:9200/_cluster/health')",
         ]
-      interval: 10s
-      timeout: 5s
+      interval: 30s
+      timeout: 30s
       retries: 3
-      start_period: 30s
 
   embedding_model:
     build:

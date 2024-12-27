@@ -8,6 +8,7 @@ import io
 import re
 import itertools
 from typing import Dict
+from datetime import datetime
 
 
 class InputString(BaseModel):
@@ -95,6 +96,20 @@ async def encode_string(input_data: InputString):
 @app.get("/stats")
 async def get_stats():
     return load_balancer.get_stats()
+
+
+@app.get("/health")
+async def health_check():
+    """
+    Health check endpoint that returns basic service status
+    """
+    return {
+        "status": "healthy",
+        "timestamp": datetime.now().isoformat(),
+        "service": "embedding-model",
+        "instances": len(load_balancer.instances),
+        "stats": load_balancer.get_stats(),
+    }
 
 
 # Helper functions

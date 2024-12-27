@@ -356,7 +356,7 @@ def compute_average_embedding(title_text=None, image=None):
     return avg_embedding
 
 
-def get_embeddings(strings_list, api_url="http://localhost:8000/encode"):
+def get_embeddings(strings_list, api_url="http://embedding_model:8000/encode"):
     """
     Get embeddings for a list of strings (text or base64-encoded images)
 

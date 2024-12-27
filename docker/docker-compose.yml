@@ -24,6 +24,25 @@ services:
       timeout: 10s
       retries: 3
 
+  embedding_model:
+    build:
+      context: ../embeddingModel
+      dockerfile: Dockerfile
+    container_name: embedding-model
+    ports:
+      - "8000:8000"
+    networks:
+      - elk
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "curl -s http://localhost:8000/health >/dev/null || exit 1",
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
   api:
     build:
       context: ../api
@@ -34,8 +53,11 @@ services:
     depends_on:
       elasticsearch:
         condition: service_healthy
+      embedding_model:
+        condition: service_healthy
     environment:
       - ELASTICSEARCH_URL=http://elasticsearch:9200
+      - EMBEDDING_MODEL_URL=http://embedding_model:8000
     networks:
       - elk
 

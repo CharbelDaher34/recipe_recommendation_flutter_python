@@ -102,6 +102,28 @@ MAPPINGS = {
 }
 
 
+# def create_elasticsearch_client():
+#     """Create and configure Elasticsearch client"""
+#     es = Elasticsearch(
+#         "http://elasticsearch:9200",
+#         basic_auth=("elastic", "pass"),
+#     )
+
+#     # Update disk watermark thresholds
+#     es.cluster.put_settings(
+#         body={
+#             "persistent": {
+#                 "cluster.routing.allocation.disk.watermark.low": "99%",
+#                 "cluster.routing.allocation.disk.watermark.high": "99%",
+#                 "cluster.routing.allocation.disk.watermark.flood_stage": "99%",
+#             }
+#         }
+#     )
+
+#     return es
+# from elasticsearch import Elasticsearch
+
+
 def create_elasticsearch_client():
     """Create and configure Elasticsearch client"""
     es = Elasticsearch(
@@ -109,16 +131,28 @@ def create_elasticsearch_client():
         basic_auth=("elastic", "pass"),
     )
 
-    # Update disk watermark thresholds
-    es.cluster.put_settings(
-        body={
-            "persistent": {
-                "cluster.routing.allocation.disk.watermark.low": "99%",
-                "cluster.routing.allocation.disk.watermark.high": "99%",
-                "cluster.routing.allocation.disk.watermark.flood_stage": "99%",
+    try:
+        # Update disk watermark thresholds
+        es.cluster.put_settings(
+            body={
+                "persistent": {
+                    "cluster.routing.allocation.disk.watermark.low": "99%",
+                    "cluster.routing.allocation.disk.watermark.high": "99%",
+                    "cluster.routing.allocation.disk.watermark.flood_stage": "99%",
+                }
             }
-        }
-    )
+        )
+        print("Disk watermark thresholds updated successfully.")
+
+        # Set default replicas for new indices
+        es.indices.put_settings(
+            index="_all",  # Apply to all indices
+            body={"settings": {"index.number_of_replicas": 0}},
+        )
+        print("Default index replicas set to 0.")
+
+    except Exception as e:
+        print(f"Error during Elasticsearch configuration: {e}")
 
     return es
 

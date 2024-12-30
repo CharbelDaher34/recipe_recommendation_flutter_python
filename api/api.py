@@ -70,7 +70,7 @@ async def lifespan(app: FastAPI):
     """Lifespan context manager for FastAPI application"""
     global df, distinct_ingredients, cuisines, courses, diets, es
 
-    # initialize_elasticsearch()
+    initialize_elasticsearch()
 
     # Initialize other globals
     distinct_ingredients, cuisines, courses, diets = initialize_globals()
@@ -264,7 +264,7 @@ async def health_check():
         }
 
 
-if __name__ == "__main__":
-    import uvicorn
+# if __name__ == "__main__":
+#     import uvicorn
 
-    uvicorn.run(app, host="0.0.0.0", port=8001)
+#     uvicorn.run(app, host="0.0.0.0", port=8001)

@@ -19,9 +19,10 @@ class ModelInstance:
     def __init__(self, model_path: str):
         self.model = AutoModel.from_pretrained(model_path, trust_remote_code=True)
         self.model = torch.load(
-            f"{model_path}/jina.pt", map_location=torch.device("cpu")
+            f"{model_path}/jina.pt", map_location=torch.device("cpu"), weights_only=True
         )
         self.request_count = 0
+        print(f"Model loaded from {model_path}")
 
     def encode_input(self, input_string):
         """
@@ -134,7 +135,7 @@ def is_base64_image(string):
         return False
 
 
-if __name__ == "__main__":
-    import uvicorn
+# if __name__ == "__main__":
+#     import uvicorn
 
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+#     uvicorn.run(app, host="0.0.0.0", port=8000)

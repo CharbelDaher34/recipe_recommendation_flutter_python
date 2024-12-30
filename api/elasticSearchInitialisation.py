@@ -136,9 +136,9 @@ def create_elasticsearch_client():
         es.cluster.put_settings(
             body={
                 "persistent": {
-                    "cluster.routing.allocation.disk.watermark.low": "99%",
-                    "cluster.routing.allocation.disk.watermark.high": "99%",
-                    "cluster.routing.allocation.disk.watermark.flood_stage": "99%",
+                    "cluster.routing.allocation.disk.watermark.low": "100%",
+                    "cluster.routing.allocation.disk.watermark.high": "100%",
+                    "cluster.routing.allocation.disk.watermark.flood_stage": "100%",
                 }
             }
         )
@@ -304,6 +304,3 @@ def initialize_elasticsearch():
 
     except Exception as e:
         print(f"Error during initialization: {e}")
-
-
-initialize_elasticsearch()

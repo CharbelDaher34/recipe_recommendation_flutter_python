@@ -111,7 +111,7 @@ async def add_recipe_endpoint(recipe: Recipe, request: Request = None):
         recipe: Recipe model instance containing all recipe details
     """
     try:
-        add_recipe(recipe, es)
+        add_recipe(recipe)
         return {"status": "Recipe submitted for review successfully"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to add recipe: {str(e)}")
@@ -153,7 +153,7 @@ async def submit_feedback(feedback: Feedback, request: Request):
         dict: Contains success/failure message
     """
     try:
-        success = index_feedback(feedback, es)
+        success = index_feedback(feedback)
         if success:
             return {"message": "Feedback received successfully"}
         else:

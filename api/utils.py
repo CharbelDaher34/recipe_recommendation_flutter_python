@@ -664,7 +664,7 @@ def predict_recipes(data):
 
 
 def add_recipe(
-    recipe: Recipe, es_client: Elasticsearch, index_name: str = "recipe_additions"
+    recipe: Recipe, es_client: Elasticsearch = es, index_name: str = "recipe_additions"
 ) -> None:
     """
     Convert Recipe to RecipeAdd and index it to Elasticsearch with accepted=False
@@ -719,7 +719,7 @@ def update_embedding_from_feedback(email, description, image, rating):
 
 
 def index_feedback(
-    feedback: Feedback, es_client: Elasticsearch, index_name: str = "feedback"
+    feedback: Feedback, es_client: Elasticsearch = es, index_name: str = "feedback"
 ) -> bool:
     """
     Index a Feedback model instance into Elasticsearch

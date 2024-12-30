@@ -15,6 +15,6 @@ RUN uv pip install --system --no-cache-dir -r requirements.txt
 
 # Copy the application code
 COPY . .
-
+RUN python saveJinaLocally.py
 # Run the script to save Jina model locally first, then start the FastAPI app
-CMD python saveJinaLocally.py && python app.py 
+CMD python app.py 

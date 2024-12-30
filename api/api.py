@@ -1,5 +1,13 @@
 from fastapi import FastAPI, Request, HTTPException
-from utils import *
+from utils import (
+    initialize_globals,
+    add_recipe,
+    save_review,
+    index_feedback,
+    predict_recipes,
+    create_user,
+    login_user,
+)
 from models import Recipe, User, Feedback, Review, RecipeAdd, UserReview
 from datetime import timedelta
 

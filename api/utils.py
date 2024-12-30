@@ -1,17 +1,27 @@
+from typing import List, Optional, Tuple
+import re
+import json
+import os
+from datetime import datetime
+
+# PIL imports
 from PIL import Image
 
+# Data processing imports
 import pandas as pd
 import numpy as np
 
+# IO and encoding imports
 import base64
 from io import BytesIO
 import requests
 import io
-from elasticsearch import Elasticsearch
-import sys
 
-sys.path.append("../data")
-from models import *
+# Elasticsearch
+from elasticsearch import Elasticsearch
+
+# Local model imports
+from models import Recipe, User, Feedback, Review, RecipeAdd, UserReview
 
 # ===========================================
 # Configuration and Initialization

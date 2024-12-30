@@ -71,3 +71,4 @@ testApi.ipynb
 # Elastic Search
 esdata/
 docker/elasticsearch_data/*
+./embeddingModel/jina_clip_v1_model/*

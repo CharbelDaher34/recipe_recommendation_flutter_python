@@ -8,6 +8,9 @@ services:
       - ELASTIC_PASSWORD=pass
       - bootstrap.memory_lock=true
       - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+      - cluster.routing.allocation.disk.watermark.low=100%
+      - cluster.routing.allocation.disk.watermark.high=100%
+      - cluster.routing.allocation.disk.watermark.flood_stage=100%
     ulimits:
       memlock:
         soft: -1
@@ -20,18 +23,6 @@ services:
     networks:
       - elk
     restart: unless-stopped
-    healthcheck:
-      test:
-        [
-          "CMD",
-          "curl",
-          "-f",
-          "http://localhost:9200/_cluster/health?wait_for_status=yellow",
-        ]
-      interval: 10s
-      timeout: 5s
-      retries: 3
-      start_period: 30s
 
   embedding_model:
     build:
@@ -43,12 +34,6 @@ services:
     networks:
       - elk
     restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
-      interval: 10s
-      timeout: 5s
-      retries: 3
-      start_period: 20s
 
   api:
     build:
@@ -58,10 +43,8 @@ services:
     ports:
       - "8001:8001"
     depends_on:
-      elasticsearch:
-        condition: service_healthy
-      embedding_model:
-        condition: service_healthy
+      - elasticsearch
+      - embedding_model
     environment:
       - ELASTICSEARCH_URL=http://elasticsearch:9200
       - EMBEDDING_MODEL_URL=http://embedding_model:8000

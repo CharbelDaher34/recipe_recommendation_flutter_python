@@ -17,10 +17,12 @@ class InputString(BaseModel):
 
 class ModelInstance:
     def __init__(self, model_path: str):
-        self.model = AutoModel.from_pretrained(model_path, trust_remote_code=True)
-        self.model = torch.load(
-            f"{model_path}/jina.pt", map_location=torch.device("cpu"), weights_only=True
+        # Load the model using AutoModel instead of torch.load
+        self.model = AutoModel.from_pretrained(
+            "./jina_clip_v1_model", trust_remote_code=True
         )
+        self.model = torch.load(f"{model_path}/jina.pt")
+        self.model.eval()  # Set the model to evaluation mode
         self.request_count = 0
         print(f"Model loaded from {model_path}")
 
@@ -76,13 +78,8 @@ class LoadBalancer:
 
 
 app = FastAPI()
-load_balancer = LoadBalancer()
 
-# Initialize model instances
-load_balancer.add_instance("model1", "./jina_clip_v1_model")
-load_balancer.add_instance("model2", "./jina_clip_v1_model")
-# load_balancer.add_instance("model3", "./jina_clip_v1_model")
-# Add more instances as needed
+load_balancer = LoadBalancer()
 
 
 @app.post("/encode")
@@ -102,15 +99,9 @@ async def get_stats():
 @app.get("/health")
 async def health_check():
     """
-    Health check endpoint that returns basic service status
+    Simple health check endpoint
     """
-    return {
-        "status": "healthy",
-        "timestamp": datetime.now().isoformat(),
-        "service": "embedding-model",
-        "instances": len(load_balancer.instances),
-        "stats": load_balancer.get_stats(),
-    }
+    return {"status": "healthy"}
 
 
 # Helper functions
@@ -135,7 +126,10 @@ def is_base64_image(string):
         return False
 
 
-# if __name__ == "__main__":
-#     import uvicorn
+if __name__ == "__main__":
+    import uvicorn
 
-#     uvicorn.run(app, host="0.0.0.0", port=8000)
+    # Initialize model instances
+    load_balancer.add_instance("model1", "./jina_clip_v1_model")
+    load_balancer.add_instance("model2", "./jina_clip_v1_model")
+    uvicorn.run(app, host="0.0.0.0", port=8000)

@@ -36,16 +36,7 @@ es = Elasticsearch(
     "http://elasticsearch:9200",  # Changed from https to http
     basic_auth=("elastic", "pass"),  # Use your actual password
 )
-# Update disk watermark thresholds
-es.cluster.put_settings(
-    body={
-        "persistent": {
-            "cluster.routing.allocation.disk.watermark.low": "99%",
-            "cluster.routing.allocation.disk.watermark.high": "99%",
-            "cluster.routing.allocation.disk.watermark.flood_stage": "99%",
-        }
-    }
-)
+
 # Test connection
 try:
     if es.ping():

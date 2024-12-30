@@ -17,13 +17,13 @@ def base64_to_image(base64_string):
     return Image.open(io.BytesIO(img_data))
 
 
-model = AutoModel.from_pretrained("./api/jina_clip_v1_model", trust_remote_code=True)
-model = torch.load("./api/jina_clip_v1_model/jina.pt")
+model = AutoModel.from_pretrained("./jina_clip_v1_model", trust_remote_code=True)
+model = torch.load("./jina_clip_v1_model/jina.pt")
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 model.to(device)
 
 # Load and process image
-image = Image.open("../compression_comparison.png")
+image = Image.open("../../multimediaProject-main/imageResults/image6.jpeg")
 # Convert to base64 string
 base64_string = image_to_base64(image)
 # Convert back to image

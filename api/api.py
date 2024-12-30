@@ -9,7 +9,7 @@ from utils import (
     login_user,
 )
 from models import Recipe, User, Feedback, Review, RecipeAdd, UserReview
-from datetime import timedelta
+from datetime import timedelta, datetime
 
 # from globals import df, distinct_ingredients, cuisines, courses, diets
 from contextlib import asynccontextmanager
@@ -26,9 +26,6 @@ logging.basicConfig(
     level=logging.ERROR,
     format="%(asctime)s - %(levelname)s - %(message)s",
 )
-
-# Add global es variable
-es = None
 
 
 def log_error(func):
@@ -239,29 +236,11 @@ async def login(user: User):
 
 @app.get("/health")
 async def health_check():
-    try:
-        # Test Elasticsearch connection
-        if es.ping():
-            return {
-                "status": "healthy",
-                "timestamp": datetime.now().isoformat(),
-                "service": "api",
-                "elasticsearch": "connected",
-            }
-        else:
-            return {
-                "status": "unhealthy",
-                "timestamp": datetime.now().isoformat(),
-                "service": "api",
-                "elasticsearch": "disconnected",
-            }
-    except Exception as e:
-        return {
-            "status": "unhealthy",
-            "timestamp": datetime.now().isoformat(),
-            "service": "api",
-            "error": str(e),
-        }
+    return {
+        "status": "healthy",
+        "timestamp": datetime.now().isoformat(),
+        "service": "api",
+    }
 
 
 # if __name__ == "__main__":

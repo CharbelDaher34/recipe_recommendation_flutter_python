@@ -6,9 +6,9 @@ WORKDIR /app
 
 # Copy ONLY the requirements file first
 COPY requirements.txt .
-
+RUN pip install uv
 # Install dependencies - this layer will be cached unless requirements.txt changes
-RUN pip install --no-cache-dir -r requirements.txt
+RUN uv pip install --system --no-cache-dir -r requirements.txt
 
 # Copy the rest of the application code
 COPY . .

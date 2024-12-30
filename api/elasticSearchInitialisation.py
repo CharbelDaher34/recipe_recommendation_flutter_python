@@ -1,5 +1,7 @@
 # Standard library imports
 import ast
+from models import Recipe
+import time
 
 # Third-party imports
 from elasticsearch import Elasticsearch
@@ -125,50 +127,27 @@ MAPPINGS = {
 
 
 def create_elasticsearch_client():
-    """Create and configure Elasticsearch client"""
-    es = Elasticsearch(
+    """Create and return Elasticsearch client"""
+    return Elasticsearch(
         "http://elasticsearch:9200",
         basic_auth=("elastic", "pass"),
     )
 
-    try:
-        # Update disk watermark thresholds
-        es.cluster.put_settings(
-            body={
-                "persistent": {
-                    "cluster.routing.allocation.disk.watermark.low": "100%",
-                    "cluster.routing.allocation.disk.watermark.high": "100%",
-                    "cluster.routing.allocation.disk.watermark.flood_stage": "100%",
-                }
-            }
-        )
-        print("Disk watermark thresholds updated successfully.")
 
-        # Set default replicas for new indices
-        es.indices.put_settings(
-            index="_all",  # Apply to all indices
-            body={"settings": {"index.number_of_replicas": 0}},
-        )
-        print("Default index replicas set to 0.")
-
-    except Exception as e:
-        print(f"Error during Elasticsearch configuration: {e}")
-
-    return es
-
-
-def create_indices(es_client):
-    """Create all required indices if they don't exist"""
+def create_indices(es):
+    """Create Elasticsearch indices with proper settings"""
     for index_name, mapping in MAPPINGS.items():
-        try:
-            if not es_client.indices.exists(index=index_name):
-                print(f"Creating index '{index_name}'...")
-                es_client.indices.create(index=index_name, body=mapping)
-                print(f"Successfully created index '{index_name}'")
-            else:
-                print(f"Index '{index_name}' already exists")
-        except Exception as e:
-            print(f"Error creating index '{index_name}': {e}")
+        if not es.indices.exists(index=index_name):
+            # Create index with settings separate from mappings
+            es.indices.create(
+                index=index_name,
+                mappings=mapping["mappings"],
+                settings={
+                    "number_of_replicas": 0,  # Move replica setting to index creation
+                    "number_of_shards": 1,
+                },
+            )
+            print(f"Created index: {index_name}")
 
 
 def row_to_recipe(row):
@@ -276,12 +255,16 @@ def initialize_elasticsearch():
         print("Creating Elasticsearch client...")
         es = create_elasticsearch_client()
 
-        # Test connection
-        if es.ping():
-            print("Successfully connected to Elasticsearch")
-        else:
-            print("Could not connect to Elasticsearch")
-            return
+        # Test connection with retry
+        print("Attempting to connect to Elasticsearch...")
+        while True:
+            if es.ping():
+                print("Successfully connected to Elasticsearch")
+                break
+            else:
+                time.sleep(5)  # Add 5-second delay between retries
+                print("Could not connect to Elasticsearch, retrying...")
+                continue
 
         # Create indices
         print("\nCreating indices...")

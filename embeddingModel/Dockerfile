@@ -12,9 +12,12 @@ COPY requirements.txt .
 
 # Install system dependencies and Python packages using uv
 RUN uv pip install --system --no-cache-dir -r requirements.txt
+# Pre-download the model directly
+RUN python -c "from transformers import AutoModel; model = AutoModel.from_pretrained('jinaai/jina-clip-v1', trust_remote_code=True)"
 
+COPY saveJinaLocally.py .
+RUN python saveJinaLocally.py
 # Copy the application code
 COPY . .
-RUN python saveJinaLocally.py
-# Run the script to save Jina model locally first, then start the FastAPI app
-CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8000"]
+# Run the Python app directly
+CMD ["python", "app.py"]

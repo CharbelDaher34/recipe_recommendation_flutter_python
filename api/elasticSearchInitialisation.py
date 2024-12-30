@@ -304,3 +304,6 @@ def initialize_elasticsearch():
 
     except Exception as e:
         print(f"Error during initialization: {e}")
+
+
+initialize_elasticsearch()

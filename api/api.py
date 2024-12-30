@@ -1,6 +1,6 @@
 from fastapi import FastAPI, Request, HTTPException
 from utils import *
-from models import User, Recipe, Feedback, Review  # Add this import
+from models import Recipe, User, Feedback, Review, RecipeAdd, UserReview
 from datetime import timedelta
 
 # from globals import df, distinct_ingredients, cuisines, courses, diets
@@ -62,7 +62,7 @@ async def lifespan(app: FastAPI):
     """Lifespan context manager for FastAPI application"""
     global df, distinct_ingredients, cuisines, courses, diets, es
 
-    initialize_elasticsearch()
+    # initialize_elasticsearch()
 
     # Initialize other globals
     distinct_ingredients, cuisines, courses, diets = initialize_globals()

@@ -4,7 +4,8 @@ services:
     container_name: elasticsearch
     environment:
       - discovery.type=single-node
-      - xpack.security.enabled=false
+      - xpack.security.enabled=true
+      - ELASTIC_PASSWORD=pass
       - bootstrap.memory_lock=true
       - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
     ulimits:
@@ -23,11 +24,12 @@ services:
       test:
         [
           "CMD-SHELL",
-          "curl --silent --fail elasticsearch:9200/_cluster/health || exit 1",
+          "curl -s -f -u elastic:pass http://localhost:9200/_cluster/health || exit 1",
         ]
       interval: 30s
       timeout: 30s
       retries: 3
+      start_period: 120s
 
   embedding_model:
     build:
@@ -40,17 +42,11 @@ services:
       - elk
     restart: unless-stopped
     healthcheck:
-      test:
-        [
-          "CMD",
-          "python",
-          "-c",
-          "import time; import urllib.request; while True: try: urllib.request.urlopen('http://embedding_model:8000/health'); break; except: time.sleep(1);",
-        ]
+      test: ["CMD-SHELL", "curl -s -f http://localhost:8000/health || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 5
-      start_period: 60s
+      start_period: 120s
 
   api:
     build:
@@ -60,10 +56,8 @@ services:
     ports:
       - "8001:8001"
     depends_on:
-      elasticsearch:
-        condition: service_healthy
-      embedding_model:
-        condition: service_healthy
+      - elasticsearch
+      - embedding_model
     environment:
       - ELASTICSEARCH_URL=http://elasticsearch:9200
       - EMBEDDING_MODEL_URL=http://embedding_model:8000
@@ -71,7 +65,11 @@ services:
       - elk
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "curl -s http://api:8001/health >/dev/null || exit 1"]
+      test:
+        [
+          "CMD-SHELL",
+          "curl --fail -s http://localhost:8001/health >/dev/null || exit 1",
+        ]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -79,7 +77,3 @@ services:
 networks:
   elk:
     driver: bridge
-
-volumes:
-  esdata:
-    driver: local

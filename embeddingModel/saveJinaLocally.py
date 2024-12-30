@@ -17,9 +17,6 @@ if not os.path.exists(model_path):
         model = AutoModel.from_pretrained(
             "jinaai/jina-clip-v1",
             trust_remote_code=True,
-            download_progress_callback=lambda current, total: progress_bar.update(
-                current - progress_bar.n
-            ),
         )
 
     model.eval()

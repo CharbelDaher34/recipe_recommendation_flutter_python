@@ -151,11 +151,23 @@ def get_user_profile(
         Optional[User]: User model instance if found, None otherwise
     """
     try:
-        # Get user data by email (used as document ID)
-        result = es_client.get(index=index_name, id=email)
+        # Validate email
+        if not email or not isinstance(email, str):
+            print("Invalid or empty email provided")
+            return None
 
-        # Convert Elasticsearch document to User model
-        user_data = result["_source"]
+        # Search for user by email field instead of using it as ID
+        query = {"query": {"term": {"email.keyword": email}}}
+
+        result = es_client.search(index=index_name, body=query)
+
+        # Check if we found any matches
+        if result["hits"]["total"]["value"] == 0:
+            print(f"No user found with email {email}")
+            return None
+
+        # Convert first matching document to User model
+        user_data = result["hits"]["hits"][0]["_source"]
         return User(**user_data)
 
     except Exception as e:
